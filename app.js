@@ -1,5 +1,5 @@
 /* ============================================================
-   FOXTROT EDGER · A++ Candle Canvas
+   FOXTROT · Trading edge canvas
    Drag & drop modular trading edge visualizer.
    ============================================================ */
 
@@ -11,19 +11,65 @@
     items: [],        // { id, kind, ...props }
     selected: null,   // id
     uid: 1,
+    tf: '15m',
+    startTime: defaultStartTime(),
+    theme: 'dark',
+    musicOn: false,
   };
 
   const KIND = {
     BULL: 'bull',
     BEAR: 'bear',
-    DOJI: 'doji',
-    SUPPORT: 'support',
-    RESISTANCE: 'resistance',
+    TP: 'tp',
+    SL: 'sl',
+    ENTRY: 'entry',
+    TRENDLINE: 'trendline',
     ZONE: 'zone',
     NOTE: 'note',
   };
 
-  const CANDLE_KINDS = new Set([KIND.BULL, KIND.BEAR, KIND.DOJI]);
+  const CANDLE_KINDS = new Set([KIND.BULL, KIND.BEAR]);
+  const LINE_KINDS   = new Set([KIND.TP, KIND.SL, KIND.ENTRY]);
+
+  // Candle horizontal magnet spacing (px). Candles snap to multiples of
+  // this from their neighbours so time gaps stay even.
+  const CANDLE_SPACING = 30;
+  const SNAP_THRESHOLD = 14;
+  const ZONE_FVG_THRESHOLD = 22;
+
+  // Timeframe → seconds
+  const TF_SECONDS = {
+    '1m': 60,
+    '5m': 300,
+    '15m': 900,
+    '1h': 3600,
+    '4h': 14400,
+    '1d': 86400,
+  };
+
+  const LINE_COLOR_PRESETS = [
+    { name: 'bull',    color: '#00ffb2', glow: '#5cffce' },
+    { name: 'bear',    color: '#ff3d6e', glow: '#ff7a9a' },
+    { name: 'neutral', color: '#9aa5b4', glow: '#cfd6e0' },
+    { name: 'fox',     color: '#ff2d87', glow: '#ff6cb0' },
+    { name: 'violet',  color: '#a855f7', glow: '#c084fc' },
+    { name: 'cyan',    color: '#22d3ee', glow: '#67e8f9' },
+    { name: 'amber',   color: '#ffd84d', glow: '#ffe8a3' },
+    { name: 'white',   color: '#ffffff', glow: '#ffd9ea' },
+  ];
+
+  const LINE_DEFAULTS = {
+    [KIND.TP]:    { color: '#00ffb2', glow: '#5cffce', defaultLabel: 'TP' },
+    [KIND.SL]:    { color: '#ff3d6e', glow: '#ff7a9a', defaultLabel: 'SL' },
+    [KIND.ENTRY]: { color: '#9aa5b4', glow: '#cfd6e0', defaultLabel: 'ENTRY' },
+  };
+
+  function defaultStartTime() {
+    const d = new Date();
+    d.setMinutes(0, 0, 0);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
 
   // ---------- DOM ----------
   const chart       = document.getElementById('chart');
@@ -31,9 +77,6 @@
   const chartSvg    = document.getElementById('chartSvg');
   const inspBody    = document.getElementById('inspBody');
   const inspCount   = document.getElementById('inspCount');
-  const bullCountEl = document.getElementById('bullCount');
-  const bearCountEl = document.getElementById('bearCount');
-  const biasEl      = document.getElementById('biasVal');
   const hint        = document.getElementById('hint');
   const priceAxis   = document.getElementById('priceAxis');
   const timeAxis    = document.getElementById('timeAxis');
@@ -49,14 +92,36 @@
       s.textContent = p;
       priceAxis.appendChild(s);
     });
-    // time axis
+    renderTimeAxis();
+  }
+
+  function renderTimeAxis() {
     timeAxis.innerHTML = '';
-    const times = ['09:00', '11:00', '13:00', '15:00', '17:00', '19:00', '21:00'];
-    times.forEach(t => {
+    const tfSec = TF_SECONDS[state.tf] || 900;
+    const startMs = new Date(state.startTime).getTime();
+    const LABEL_COUNT = 7;
+    const BARS_BETWEEN = 5; // label every 5 bars
+    for (let i = 0; i < LABEL_COUNT; i++) {
       const s = document.createElement('span');
-      s.textContent = t;
+      if (!isNaN(startMs)) {
+        const d = new Date(startMs + i * BARS_BETWEEN * tfSec * 1000);
+        s.textContent = formatTime(d, state.tf);
+      } else {
+        s.textContent = '—';
+      }
       timeAxis.appendChild(s);
-    });
+    }
+  }
+
+  function formatTime(d, tf) {
+    const pad = n => String(n).padStart(2, '0');
+    if (tf === '1d') {
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    if (tf === '4h' || tf === '1h') {
+      return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   function renderGrid() {
@@ -90,8 +155,23 @@
       const topWick = 15 + Math.random() * 15;
       const botWick = 15 + Math.random() * 15;
       item = { id, kind, x, y, width: 22, topWick, bodyH, botWick };
-    } else if (kind === KIND.SUPPORT || kind === KIND.RESISTANCE) {
-      item = { id, kind, x, y, width: 260, label: kind === KIND.SUPPORT ? 'SUPPORT' : 'RESISTANCE' };
+    } else if (LINE_KINDS.has(kind)) {
+      const d = LINE_DEFAULTS[kind];
+      item = {
+        id, kind, x, y, width: 260,
+        label: d.defaultLabel,
+        color: d.color,
+        glow:  d.glow,
+      };
+    } else if (kind === KIND.TRENDLINE) {
+      item = {
+        id, kind,
+        x1: x,       y1: y + 40,
+        x2: x + 220, y2: y - 40,
+        label: '',
+        color: '#ff2d87',
+        glow:  '#ff6cb0',
+      };
     } else if (kind === KIND.ZONE) {
       item = { id, kind, x, y, width: 220, height: 80, text: 'SUPPLY / DEMAND' };
     } else if (kind === KIND.NOTE) {
@@ -100,10 +180,30 @@
     state.items.push(item);
     renderItem(item);
     renderInspector();
-    updateStats();
     hideHint();
     select(id);
     return item;
+  }
+
+  // Find the ideal drop position for a new candle: place it one CANDLE_SPACING
+  // past the right-most existing candle's body center. Falls back to the centre
+  // of the chart when no candles exist yet.
+  function nextCandleSlot() {
+    const rect = chart.getBoundingClientRect();
+    const candles = state.items.filter(i => CANDLE_KINDS.has(i.kind));
+    if (candles.length === 0) {
+      return { x: rect.width * 0.25, y: rect.height / 2 - 60 };
+    }
+    const last = candles.reduce((a, b) => (a.x > b.x ? a : b));
+    let x = last.x + CANDLE_SPACING;
+    const maxX = rect.width - (last.width || 22) - 20;
+    if (x > maxX) x = maxX;
+    // Mirror the last candle's vertical center so the new candle sits on
+    // the same price level — still fully draggable afterwards.
+    const lastTotal = (last.topWick || 0) + (last.bodyH || 0) + (last.botWick || 0);
+    const newTotal  = 22 + 60 + 22; // rough default before random sizing
+    const y = last.y + lastTotal / 2 - newTotal / 2;
+    return { x, y };
   }
 
   function renderItem(item) {
@@ -165,36 +265,154 @@
           <div class="zone-label"></div>
           <div class="zone-resize" data-zone-resize></div>
         `;
+      } else if (LINE_KINDS.has(item.kind)) {
+        el.innerHTML = `
+          <div class="line-label"></div>
+          <div class="line-handle h-left"  data-line-handle="left"></div>
+          <div class="line-handle h-right" data-line-handle="right"></div>
+          <div class="color-swatches"></div>
+        `;
+        buildSwatches(el, item);
+      } else if (item.kind === KIND.TRENDLINE) {
+        el.innerHTML = `
+          <svg class="tl-svg" xmlns="http://www.w3.org/2000/svg">
+            <line class="tl-hit"></line>
+            <line class="tl-line"></line>
+          </svg>
+          <div class="tl-handle tl-p1" data-tl-handle="p1"></div>
+          <div class="tl-handle tl-p2" data-tl-handle="p2"></div>
+          <div class="tl-label"></div>
+          <div class="color-swatches"></div>
+        `;
+        buildSwatches(el, item);
       }
       overlay.appendChild(el);
-      attachDrag(el, item);
+      if (item.kind === KIND.TRENDLINE) {
+        attachTrendlineDrag(el, item);
+        attachTrendlineHandles(el, item);
+        attachTrendlineEdit(el, item);
+      } else {
+        attachDrag(el, item);
+      }
       if (item.kind === KIND.NOTE) attachNoteEdit(el, item);
       if (item.kind === KIND.ZONE) {
         attachZoneEdit(el, item);
         attachZoneResize(el, item);
       }
+      if (LINE_KINDS.has(item.kind)) {
+        attachLineEdit(el, item);
+        attachLineHandles(el, item);
+      }
     }
     el.className = 'markup';
-    el.style.left = `${item.x}px`;
-    el.style.top = `${item.y}px`;
 
-    if (item.kind === KIND.SUPPORT || item.kind === KIND.RESISTANCE) {
-      el.classList.add('line', item.kind);
-      el.style.width = `${item.width}px`;
-      el.setAttribute('data-label', item.label);
-    } else if (item.kind === KIND.ZONE) {
-      el.classList.add('zone');
-      el.style.width  = `${item.width}px`;
-      el.style.height = `${item.height}px`;
-      const label = el.querySelector('.zone-label');
-      if (label && document.activeElement !== label) {
-        label.textContent = item.text || 'SUPPLY / DEMAND';
+    if (item.kind === KIND.TRENDLINE) {
+      el.classList.add('trendline');
+      renderTrendline(el, item);
+    } else {
+      el.style.left = `${item.x}px`;
+      el.style.top  = `${item.y}px`;
+
+      if (LINE_KINDS.has(item.kind)) {
+        el.classList.add('line', item.kind);
+        el.style.width = `${item.width}px`;
+        if (item.color) {
+          el.style.setProperty('--line-color', item.color);
+          el.style.setProperty('--line-glow',  item.glow || item.color);
+        }
+        const label = el.querySelector('.line-label');
+        if (label && document.activeElement !== label) {
+          label.textContent = item.label || (LINE_DEFAULTS[item.kind] && LINE_DEFAULTS[item.kind].defaultLabel) || '';
+        }
+      } else if (item.kind === KIND.ZONE) {
+        el.classList.add('zone');
+        el.style.width  = `${item.width}px`;
+        el.style.height = `${item.height}px`;
+        const label = el.querySelector('.zone-label');
+        if (label && document.activeElement !== label) {
+          label.textContent = item.text || 'SUPPLY / DEMAND';
+        }
+      } else if (item.kind === KIND.NOTE) {
+        el.classList.add('note');
+        el.textContent = item.text;
       }
-    } else if (item.kind === KIND.NOTE) {
-      el.classList.add('note');
-      el.textContent = item.text;
     }
     if (state.selected === item.id) el.classList.add('selected');
+  }
+
+  function buildSwatches(el, item) {
+    const container = el.querySelector('.color-swatches');
+    if (!container) return;
+    container.innerHTML = '';
+    LINE_COLOR_PRESETS.forEach(p => {
+      const s = document.createElement('button');
+      s.className = 'swatch';
+      s.style.background = p.color;
+      s.title = p.name;
+      if (item.color === p.color) s.classList.add('active');
+      s.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      s.addEventListener('click', (e) => {
+        e.stopPropagation();
+        item.color = p.color;
+        item.glow  = p.glow;
+        container.querySelectorAll('.swatch').forEach(x => x.classList.remove('active'));
+        s.classList.add('active');
+        renderItem(item);
+        renderInspector();
+      });
+      container.appendChild(s);
+    });
+  }
+
+  function renderTrendline(el, item) {
+    const PAD = 18;
+    const minX = Math.min(item.x1, item.x2);
+    const minY = Math.min(item.y1, item.y2);
+    const w = Math.max(2, Math.abs(item.x2 - item.x1));
+    const h = Math.max(2, Math.abs(item.y2 - item.y1));
+
+    el.style.left   = `${minX - PAD}px`;
+    el.style.top    = `${minY - PAD}px`;
+    el.style.width  = `${w + PAD * 2}px`;
+    el.style.height = `${h + PAD * 2}px`;
+
+    if (item.color) {
+      el.style.setProperty('--line-color', item.color);
+      el.style.setProperty('--line-glow',  item.glow || item.color);
+    }
+
+    const svg = el.querySelector('.tl-svg');
+    svg.setAttribute('viewBox', `0 0 ${w + PAD * 2} ${h + PAD * 2}`);
+
+    const lp1x = item.x1 - minX + PAD;
+    const lp1y = item.y1 - minY + PAD;
+    const lp2x = item.x2 - minX + PAD;
+    const lp2y = item.y2 - minY + PAD;
+
+    ['.tl-hit', '.tl-line'].forEach(sel => {
+      const l = el.querySelector(sel);
+      l.setAttribute('x1', lp1x);
+      l.setAttribute('y1', lp1y);
+      l.setAttribute('x2', lp2x);
+      l.setAttribute('y2', lp2y);
+    });
+
+    const h1 = el.querySelector('.tl-p1');
+    const h2 = el.querySelector('.tl-p2');
+    h1.style.left = `${lp1x}px`;
+    h1.style.top  = `${lp1y}px`;
+    h2.style.left = `${lp2x}px`;
+    h2.style.top  = `${lp2y}px`;
+
+    const label = el.querySelector('.tl-label');
+    if (label && document.activeElement !== label) {
+      label.textContent = item.label || '';
+    }
+    // put label near midpoint
+    if (label) {
+      label.style.left = `${(lp1x + lp2x) / 2 - 20}px`;
+      label.style.top  = `${(lp1y + lp2y) / 2 - 22}px`;
+    }
   }
 
   function removeItem(id) {
@@ -203,7 +421,6 @@
     if (el) el.remove();
     if (state.selected === id) state.selected = null;
     renderInspector();
-    updateStats();
   }
 
   function select(id) {
@@ -222,6 +439,8 @@
     const onDown = (e) => {
       if (e.target.classList.contains('size-handle')) return;
       if (e.target.classList.contains('zone-resize')) return;
+      if (e.target.classList.contains('line-handle')) return;
+      if (e.target.classList.contains('swatch')) return;
       if (e.target.isContentEditable) return;
       e.preventDefault();
       e.stopPropagation();
@@ -240,6 +459,14 @@
       if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
       item.x = origX + dx;
       item.y = origY + dy;
+      // Candles magnet to their neighbours on the X axis to keep a clean
+      // time grid. Zones snap into the gap between adjacent candles to
+      // feel like a Fair Value Gap.
+      if (CANDLE_KINDS.has(item.kind)) {
+        applyCandleMagnet(item);
+      } else if (item.kind === KIND.ZONE) {
+        applyZoneFVGMagnet(item);
+      }
       clampItem(item);
       renderItem(item);
       updateCoord(item.x, item.y);
@@ -249,6 +476,67 @@
       window.removeEventListener('pointerup', onUp);
     };
     el.addEventListener('pointerdown', onDown);
+  }
+
+  // Snap a candle so its x lands on the same even-spaced grid as the
+  // other candles on the canvas. We look for the nearest candle, then
+  // project the current position onto the nearest CANDLE_SPACING slot
+  // around it. Any slot within SNAP_THRESHOLD wins.
+  function applyCandleMagnet(item) {
+    const others = state.items.filter(i =>
+      i.id !== item.id && CANDLE_KINDS.has(i.kind)
+    );
+    if (others.length === 0) return;
+    let bestDelta = Infinity;
+    let bestX = item.x;
+    for (const o of others) {
+      // try to sit 1..6 slots away, on either side of this neighbour
+      for (let k = -6; k <= 6; k++) {
+        if (k === 0) continue;
+        const target = o.x + k * CANDLE_SPACING;
+        const d = Math.abs(target - item.x);
+        if (d < bestDelta) { bestDelta = d; bestX = target; }
+      }
+    }
+    if (bestDelta <= SNAP_THRESHOLD) {
+      item.x = bestX;
+    }
+  }
+
+  // FVG-style zone magnet: when a zone is dragged near the gap between
+  // two adjacent candles, snap it to fill that gap horizontally. The
+  // vertical position stays wherever the user drops it.
+  function applyZoneFVGMagnet(item) {
+    const candles = state.items
+      .filter(i => CANDLE_KINDS.has(i.kind))
+      .sort((a, b) => a.x - b.x);
+    if (candles.length < 2) return;
+
+    const zoneCenter = item.x + item.width / 2;
+
+    let bestDelta = Infinity;
+    let bestX = null;
+    let bestW = null;
+
+    for (let i = 0; i < candles.length - 1; i++) {
+      const left  = candles[i];
+      const right = candles[i + 1];
+      const gapStart = left.x + (left.width || 22);
+      const gapEnd   = right.x;
+      if (gapEnd - gapStart < 4) continue; // candles touching
+      const gapCenter = (gapStart + gapEnd) / 2;
+      const d = Math.abs(zoneCenter - gapCenter);
+      if (d < bestDelta) {
+        bestDelta = d;
+        bestX = gapStart - 2;
+        bestW = (gapEnd - gapStart) + 4;
+      }
+    }
+
+    if (bestDelta <= ZONE_FVG_THRESHOLD && bestX !== null) {
+      item.x = bestX;
+      item.width = Math.max(bestW, 14);
+    }
   }
 
   function attachCandleResize(el, item) {
@@ -338,12 +626,9 @@
   function attachCandleDouble(el, item) {
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      if (item.kind === KIND.BULL)      item.kind = KIND.BEAR;
-      else if (item.kind === KIND.BEAR) item.kind = KIND.DOJI;
-      else                              item.kind = KIND.BULL;
+      item.kind = item.kind === KIND.BULL ? KIND.BEAR : KIND.BULL;
       renderItem(item);
       renderInspector();
-      updateStats();
     });
   }
 
@@ -429,6 +714,204 @@
     handle.addEventListener('pointerdown', onDown);
   }
 
+  // ---------- Line (horizontal) editing + resizing ----------
+  function attachLineEdit(el, item) {
+    const label = el.querySelector('.line-label');
+    if (!label) return;
+
+    const finish = () => {
+      label.contentEditable = 'false';
+      const txt = label.textContent.replace(/\s+/g, ' ').trim();
+      item.label = txt;
+      label.textContent = txt || (LINE_DEFAULTS[item.kind] && LINE_DEFAULTS[item.kind].defaultLabel) || '';
+      renderInspector();
+    };
+
+    const beginEdit = (e) => {
+      e.stopPropagation();
+      label.contentEditable = 'true';
+      label.focus();
+      const r = document.createRange();
+      r.selectNodeContents(label);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    };
+
+    el.addEventListener('dblclick', (e) => {
+      if (e.target.classList.contains('line-handle')) return;
+      if (e.target.classList.contains('swatch')) return;
+      beginEdit(e);
+    });
+
+    label.addEventListener('blur', finish);
+    label.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter')  { e.preventDefault(); label.blur(); }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        label.textContent = item.label || '';
+        label.blur();
+      }
+    });
+    label.addEventListener('pointerdown', (e) => {
+      if (label.contentEditable === 'true') e.stopPropagation();
+    });
+  }
+
+  function attachLineHandles(el, item) {
+    const MIN_W = 40;
+    const bind = (selector, side) => {
+      const h = el.querySelector(selector);
+      if (!h) return;
+      h.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        select(item.id);
+        const start = pointer(e);
+        const origX = item.x;
+        const origW = item.width;
+        const onMove = (ev) => {
+          const pt = pointer(ev);
+          const dx = pt.x - start.x;
+          if (side === 'right') {
+            item.width = Math.max(MIN_W, origW + dx);
+          } else {
+            // left handle: move x and shrink/grow width from the left
+            let newX = origX + dx;
+            let newW = origW - dx;
+            if (newW < MIN_W) {
+              newW = MIN_W;
+              newX = origX + origW - MIN_W;
+            }
+            item.x = newX;
+            item.width = newW;
+          }
+          clampItem(item);
+          renderItem(item);
+          renderInspector();
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    };
+    bind('.line-handle.h-left',  'left');
+    bind('.line-handle.h-right', 'right');
+  }
+
+  // ---------- Trendline (diagonal) handlers ----------
+  function attachTrendlineDrag(el, item) {
+    // We can't rely on the whole wrapper receiving pointer events (its
+    // pointer-events are off so the canvas underneath stays usable), so we
+    // install the drag starter on the inner hit-line only.
+    const hit = el.querySelector('.tl-hit');
+    if (!hit) return;
+    hit.addEventListener('pointerdown', (e) => {
+      if (e.target.classList.contains('tl-handle')) return;
+      if (e.target.classList.contains('swatch')) return;
+      if (e.target.isContentEditable) return;
+      e.preventDefault();
+      e.stopPropagation();
+      select(item.id);
+      const start = pointer(e);
+      const o1x = item.x1, o1y = item.y1;
+      const o2x = item.x2, o2y = item.y2;
+      const onMove = (ev) => {
+        const pt = pointer(ev);
+        const dx = pt.x - start.x;
+        const dy = pt.y - start.y;
+        item.x1 = o1x + dx; item.y1 = o1y + dy;
+        item.x2 = o2x + dx; item.y2 = o2y + dy;
+        clampItem(item);
+        renderItem(item);
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  }
+
+  function attachTrendlineHandles(el, item) {
+    const bind = (selector, which) => {
+      const h = el.querySelector(selector);
+      if (!h) return;
+      h.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        select(item.id);
+        const start = pointer(e);
+        const o = { x1: item.x1, y1: item.y1, x2: item.x2, y2: item.y2 };
+        const onMove = (ev) => {
+          const pt = pointer(ev);
+          const dx = pt.x - start.x;
+          const dy = pt.y - start.y;
+          if (which === 'p1') {
+            item.x1 = o.x1 + dx;
+            item.y1 = o.y1 + dy;
+          } else {
+            item.x2 = o.x2 + dx;
+            item.y2 = o.y2 + dy;
+          }
+          clampItem(item);
+          renderItem(item);
+          renderInspector();
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    };
+    bind('.tl-p1', 'p1');
+    bind('.tl-p2', 'p2');
+  }
+
+  function attachTrendlineEdit(el, item) {
+    const label = el.querySelector('.tl-label');
+    if (!label) return;
+
+    const finish = () => {
+      label.contentEditable = 'false';
+      const txt = label.textContent.replace(/\s+/g, ' ').trim();
+      item.label = txt;
+      label.textContent = txt;
+      renderInspector();
+    };
+
+    label.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      label.contentEditable = 'true';
+      label.focus();
+      const r = document.createRange();
+      r.selectNodeContents(label);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    label.addEventListener('blur', finish);
+    label.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter')  { e.preventDefault(); label.blur(); }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        label.textContent = item.label || '';
+        label.blur();
+      }
+    });
+    label.addEventListener('pointerdown', (e) => {
+      if (label.contentEditable === 'true') e.stopPropagation();
+    });
+  }
+
   function pointer(e) {
     const rect = chart.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -436,10 +919,23 @@
 
   function clampItem(item) {
     const rect = chart.getBoundingClientRect();
+    if (item.kind === KIND.TRENDLINE) {
+      const clampP = (x, y) => ({
+        x: Math.max(0, Math.min(rect.width,  x)),
+        y: Math.max(0, Math.min(rect.height, y)),
+      });
+      const p1 = clampP(item.x1, item.y1);
+      const p2 = clampP(item.x2, item.y2);
+      item.x1 = p1.x; item.y1 = p1.y;
+      item.x2 = p2.x; item.y2 = p2.y;
+      return;
+    }
     const w = item.width || 40;
     let h;
     if (CANDLE_KINDS.has(item.kind)) {
       h = (item.topWick || 0) + (item.bodyH || 0) + (item.botWick || 0);
+    } else if (LINE_KINDS.has(item.kind)) {
+      h = 3;
     } else {
       h = item.height || 20;
     }
@@ -488,13 +984,14 @@
 
   function labelFor(item) {
     const map = {
-      bull: '● BULL CANDLE',
-      bear: '● BEAR CANDLE',
-      doji: '● DOJI',
-      support: '─ SUPPORT',
-      resistance: '─ RESISTANCE',
-      zone: '▢ SUPPLY/DEMAND',
-      note: '✦ NOTE',
+      bull:      '● BULL CANDLE',
+      bear:      '● BEAR CANDLE',
+      tp:        '─ TP',
+      sl:        '─ SL',
+      entry:     '─ ENTRY',
+      trendline: '╱ TRENDLINE',
+      zone:      '▢ FVG / ZONE',
+      note:      '✦ NOTE',
     };
     return map[item.kind] || item.kind;
   }
@@ -504,22 +1001,16 @@
     }
     if (item.kind === KIND.NOTE) return `"${item.text}"`;
     if (item.kind === KIND.ZONE) return `"${item.text}" · ${Math.round(item.width)}×${Math.round(item.height)}`;
-    return `x:${Math.round(item.x)} y:${Math.round(item.y)} · w:${item.width}`;
-  }
-
-  function updateStats() {
-    const bulls = state.items.filter(i => i.kind === KIND.BULL).length;
-    const bears = state.items.filter(i => i.kind === KIND.BEAR).length;
-    bullCountEl.textContent = bulls;
-    bearCountEl.textContent = bears;
-    let bias = '—';
-    if (bulls > bears) bias = 'LONG';
-    else if (bears > bulls) bias = 'SHORT';
-    else if (bulls > 0) bias = 'FLAT';
-    biasEl.textContent = bias;
-    biasEl.style.color = bias === 'LONG' ? 'var(--bull)'
-                      : bias === 'SHORT' ? 'var(--bear)'
-                      : 'var(--ink)';
+    if (item.kind === KIND.TRENDLINE) {
+      const dx = item.x2 - item.x1;
+      const dy = item.y2 - item.y1;
+      const len = Math.round(Math.sqrt(dx * dx + dy * dy));
+      return `${item.label || 'trendline'} · len:${len}`;
+    }
+    if (LINE_KINDS.has(item.kind)) {
+      return `${item.label || ''} · w:${Math.round(item.width)}`;
+    }
+    return `x:${Math.round(item.x)} y:${Math.round(item.y)} · w:${item.width || ''}`;
   }
 
   function hideHint() {
@@ -534,16 +1025,23 @@
 
   function handleToolAction(action) {
     const c = centerPos();
-    const jitter = () => ({ x: c.x + (Math.random() - 0.5) * 160, y: c.y + (Math.random() - 0.5) * 100 });
-    const p = jitter();
     switch (action) {
-      case 'add-bull':       newItem(KIND.BULL, p.x, p.y); break;
-      case 'add-bear':       newItem(KIND.BEAR, p.x, p.y); break;
-      case 'add-doji':       newItem(KIND.DOJI, p.x, p.y); break;
-      case 'add-support':    newItem(KIND.SUPPORT, 60, c.y + 120); break;
-      case 'add-resistance': newItem(KIND.RESISTANCE, 60, c.y - 120); break;
-      case 'add-zone':       newItem(KIND.ZONE, c.x - 40, c.y - 30); break;
-      case 'add-note':       newItem(KIND.NOTE, c.x, c.y - 80); break;
+      case 'add-bull': {
+        const slot = nextCandleSlot();
+        newItem(KIND.BULL, slot.x, slot.y);
+        break;
+      }
+      case 'add-bear': {
+        const slot = nextCandleSlot();
+        newItem(KIND.BEAR, slot.x, slot.y);
+        break;
+      }
+      case 'add-tp':       newItem(KIND.TP,       60, c.y - 120); break;
+      case 'add-sl':       newItem(KIND.SL,       60, c.y + 120); break;
+      case 'add-entry':    newItem(KIND.ENTRY,    60, c.y);       break;
+      case 'add-diagonal': newItem(KIND.TRENDLINE, c.x - 60, c.y - 30); break;
+      case 'add-zone':     newItem(KIND.ZONE,      c.x - 40, c.y - 30); break;
+      case 'add-note':     newItem(KIND.NOTE,      c.x, c.y - 80); break;
       case 'preset-breakout':  presetBreakout(); break;
       case 'preset-reversal':  presetReversal(); break;
       case 'preset-liquidity': presetLiquiditySweep(); break;
@@ -564,11 +1062,22 @@
   }
   function candleTotal(bodyH, topWick, botWick) { return bodyH + topWick + botWick; }
 
+  function pushLine(kind, x, y, width, label) {
+    state.uid++;
+    const d = LINE_DEFAULTS[kind];
+    state.items.push({
+      id: state.uid, kind, x, y, width,
+      label: label || (d && d.defaultLabel) || '',
+      color: d && d.color,
+      glow:  d && d.glow,
+    });
+  }
+
   function presetBreakout() {
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2;
-    const spacing = 38;
+    const spacing = CANDLE_SPACING;
     const startX = r.width / 2 - (spacing * 4);
     // consolidation
     for (let i = 0; i < 4; i++) {
@@ -585,19 +1094,20 @@
       const total = candleTotal(bodyH, w, w);
       pushCandle(KIND.BULL, startX + (4 + i) * spacing, baseY - 50 - i * 18 - total / 2, bodyH, w, w);
     }
+    pushLine(KIND.ENTRY, 60, baseY - 30,  r.width - 120, 'ENTRY');
+    pushLine(KIND.TP,    60, baseY - 150, r.width - 120, 'TP');
+    pushLine(KIND.SL,    60, baseY + 40,  r.width - 120, 'SL');
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.RESISTANCE, x: 60, y: baseY - 30, width: r.width - 120, label: 'BROKEN RESISTANCE' });
-    state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing + 30, y: baseY - 150, text: 'BREAKOUT ENTRY' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing + 30, y: baseY - 180, text: 'BREAKOUT' });
     state.items.forEach(renderItem);
-    renderInspector(); updateStats(); hideHint();
+    renderInspector(); hideHint();
   }
 
   function presetReversal() {
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2 - 80;
-    const spacing = 38;
+    const spacing = CANDLE_SPACING;
     const startX = r.width / 2 - (spacing * 4);
     for (let i = 0; i < 4; i++) {
       const bodyH = 80 - i * 10;
@@ -605,27 +1115,26 @@
       const total = candleTotal(bodyH, w, w);
       pushCandle(KIND.BEAR, startX + i * spacing, baseY + i * 30 - total / 2, bodyH, w, w);
     }
-    // doji pivot
-    pushCandle(KIND.DOJI, startX + 4 * spacing, baseY + 4 * 30 - 50, 8, 36, 36);
     for (let i = 0; i < 4; i++) {
       const bodyH = 50 + i * 15;
       const w = 12;
       const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, startX + (5 + i) * spacing, baseY + (4 - i) * 30 - 20 - total / 2, bodyH, w, w);
+      pushCandle(KIND.BULL, startX + (4 + i) * spacing, baseY + (4 - i) * 30 - 20 - total / 2, bodyH, w, w);
     }
+    pushLine(KIND.ENTRY, 60, baseY + 120, r.width - 120, 'ENTRY');
+    pushLine(KIND.TP,    60, baseY - 20,  r.width - 120, 'TP');
+    pushLine(KIND.SL,    60, baseY + 180, r.width - 120, 'SL');
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.SUPPORT, x: 60, y: baseY + 150, width: r.width - 120, label: 'DEMAND FLIP' });
-    state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing - 20, y: baseY + 180, text: 'REVERSAL' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing - 20, y: baseY + 200, text: 'REVERSAL' });
     state.items.forEach(renderItem);
-    renderInspector(); updateStats(); hideHint();
+    renderInspector(); hideHint();
   }
 
   function presetLiquiditySweep() {
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2;
-    const spacing = 38;
+    const spacing = CANDLE_SPACING;
     const startX = r.width / 2 - (spacing * 4);
     // range
     for (let i = 0; i < 5; i++) {
@@ -656,7 +1165,7 @@
     state.uid++;
     state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 5 * spacing - 30, y: baseY + 110, text: 'LIQ. SWEEP' });
     state.items.forEach(renderItem);
-    renderInspector(); updateStats(); hideHint();
+    renderInspector(); hideHint();
   }
 
   // ---------- User profile (per-user private history) ----------
@@ -758,14 +1267,19 @@
       const pi = document.getElementById('pairInput');
       if (pi) pi.value = data.pair;
     }
+    const migrated = [];
     data.items.forEach(it => {
-      migrateItem(it);
+      const next = migrateItem(it);
+      if (!next) return;
+      migrated.push(next);
+    });
+    migrated.forEach(it => {
       state.items.push(it);
       renderItem(it);
     });
     state.items.forEach(clampItem);
     state.items.forEach(renderItem);
-    renderInspector(); updateStats(); hideHint();
+    renderInspector(); hideHint();
   }
 
   function renderHistoryList() {
@@ -838,6 +1352,11 @@
   }
 
   function migrateItem(it) {
+    // Legacy kinds
+    if (it.kind === 'doji')       it.kind = KIND.BULL;     // doji removed
+    if (it.kind === 'support')    it.kind = KIND.TP;        // green line → TP
+    if (it.kind === 'resistance') it.kind = KIND.SL;        // red line   → SL
+
     if (CANDLE_KINDS.has(it.kind)) {
       // old format: { bodyH, wickH } → new: { topWick, bodyH, botWick }
       if (it.wickH !== undefined && it.topWick === undefined) {
@@ -849,6 +1368,18 @@
       if (it.topWick == null) it.topWick = 15;
       if (it.bodyH   == null) it.bodyH   = 60;
       if (it.botWick == null) it.botWick = 15;
+    }
+    if (LINE_KINDS.has(it.kind)) {
+      const d = LINE_DEFAULTS[it.kind] || {};
+      if (it.color == null) it.color = d.color;
+      if (it.glow  == null) it.glow  = d.glow;
+      if (it.label == null) it.label = d.defaultLabel || '';
+      if (it.width == null) it.width = 260;
+    }
+    if (it.kind === KIND.TRENDLINE) {
+      if (it.color == null) it.color = '#ff2d87';
+      if (it.glow  == null) it.glow  = '#ff6cb0';
+      if (it.label == null) it.label = '';
     }
     if (it.kind === KIND.ZONE && !it.text) {
       it.text = 'SUPPLY / DEMAND';
@@ -888,20 +1419,7 @@
         try {
           const data = JSON.parse(ev.target.result);
           if (!data || !Array.isArray(data.items)) throw new Error('invalid shape');
-          clearAll();
-          state.uid = Number(data.uid) || 1;
-          if (data.pair) {
-            const pi = document.getElementById('pairInput');
-            if (pi) pi.value = data.pair;
-          }
-          data.items.forEach(it => {
-            migrateItem(it);
-            state.items.push(it);
-            renderItem(it);
-          });
-          state.items.forEach(clampItem);
-          state.items.forEach(renderItem);
-          renderInspector(); updateStats(); hideHint();
+          hydrateFromPayload(data);
           flash('LOADED ✓');
         } catch (err) {
           console.error('[Foxtrot Edger] load failed:', err);
@@ -929,10 +1447,180 @@
     }, 1100);
   }
 
+  // ---------- Theme + music ----------
+  function applyTheme(theme) {
+    state.theme = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = state.theme;
+    try { localStorage.setItem(userKey('theme'), state.theme); } catch (_) {}
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.textContent = state.theme === 'light' ? '☀' : '☾';
+  }
+  function toggleTheme() {
+    applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+  }
+
+  // Procedural "endless chill space ambience":
+  //   - Two slowly detuned sine oscillators forming a soft drone chord,
+  //     shaped by a very slow LFO on the master gain for breathing motion.
+  //   - Occasional bell tones on random pentatonic notes, routed through
+  //     a long feedback delay to feel endless and cavernous.
+  // Everything is built on a single AudioContext that starts on first
+  // toggle (required by browser autoplay rules) and is resumed afterwards.
+  const audio = {
+    ctx: null,
+    master: null,
+    drone: null,
+    lfo: null,
+    delay: null,
+    bellTimer: null,
+    started: false,
+  };
+
+  function startAmbience() {
+    if (!audio.ctx) {
+      try { audio.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (_) { return; }
+    }
+    if (audio.ctx.state === 'suspended') audio.ctx.resume();
+
+    if (!audio.started) {
+      const ctx = audio.ctx;
+      const master = ctx.createGain();
+      master.gain.value = 0.0001;
+      master.connect(ctx.destination);
+
+      // Long delay for endless tails
+      const delay = ctx.createDelay(5.0);
+      delay.delayTime.value = 0.9;
+      const feedback = ctx.createGain();
+      feedback.gain.value = 0.55;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.45;
+      delay.connect(feedback).connect(delay);
+      delay.connect(wet).connect(master);
+
+      // Drone chord (soft low fifth)
+      const droneGain = ctx.createGain();
+      droneGain.gain.value = 0.18;
+      droneGain.connect(master);
+      droneGain.connect(delay);
+
+      const freqs = [110, 138.6, 164.8]; // A2 C#3 E3
+      const oscs = freqs.map(f => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f;
+        // mild detune so it feels alive
+        o.detune.value = (Math.random() - 0.5) * 10;
+        o.connect(droneGain);
+        o.start();
+        return o;
+      });
+
+      // Slow LFO shaping the drone so it breathes
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.07;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.08;
+      lfo.connect(lfoGain).connect(droneGain.gain);
+      lfo.start();
+
+      // Bell voice factory
+      const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+      const bell = () => {
+        if (!audio.started) return;
+        const now = ctx.currentTime;
+        const f = pentatonic[Math.floor(Math.random() * pentatonic.length)];
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
+        o.connect(g).connect(delay);
+        o.start(now);
+        o.stop(now + 3.4);
+        audio.bellTimer = setTimeout(bell, 3500 + Math.random() * 6500);
+      };
+      audio.bellTimer = setTimeout(bell, 1500);
+
+      // Fade in
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setValueAtTime(0.0001, ctx.currentTime);
+      master.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 2.2);
+
+      audio.master = master;
+      audio.drone  = { oscs, gain: droneGain };
+      audio.lfo    = lfo;
+      audio.delay  = delay;
+      audio.started = true;
+    } else {
+      // Resume existing graph
+      const ctx = audio.ctx;
+      audio.master.gain.cancelScheduledValues(ctx.currentTime);
+      audio.master.gain.setValueAtTime(audio.master.gain.value, ctx.currentTime);
+      audio.master.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + 1.2);
+    }
+  }
+
+  function stopAmbience() {
+    if (!audio.ctx || !audio.master) return;
+    const ctx = audio.ctx;
+    audio.master.gain.cancelScheduledValues(ctx.currentTime);
+    audio.master.gain.setValueAtTime(audio.master.gain.value, ctx.currentTime);
+    audio.master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+  }
+
+  function toggleMusic() {
+    state.musicOn = !state.musicOn;
+    const icon = document.getElementById('musicIcon');
+    const btn  = document.getElementById('musicBtn');
+    if (state.musicOn) {
+      startAmbience();
+      if (icon) icon.textContent = '♫';
+      if (btn)  btn.classList.add('active');
+      flash('AMBIENCE ON');
+    } else {
+      stopAmbience();
+      if (icon) icon.textContent = '♪';
+      if (btn)  btn.classList.remove('active');
+      flash('AMBIENCE OFF');
+    }
+    try { localStorage.setItem(userKey('music'), state.musicOn ? '1' : '0'); } catch (_) {}
+  }
+
   // ---------- Bindings ----------
   document.querySelectorAll('.tool').forEach(btn => {
     btn.addEventListener('click', () => handleToolAction(btn.dataset.action));
   });
+
+  // TF pills
+  document.querySelectorAll('.tf-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const tf = pill.dataset.tf;
+      if (!TF_SECONDS[tf]) return;
+      state.tf = tf;
+      document.querySelectorAll('.tf-pill').forEach(p => p.classList.toggle('active', p === pill));
+      renderTimeAxis();
+      try { localStorage.setItem(userKey('tf'), tf); } catch (_) {}
+    });
+  });
+
+  // Start time picker
+  const startTimeInput = document.getElementById('startTimeInput');
+  if (startTimeInput) {
+    startTimeInput.value = state.startTime;
+    startTimeInput.addEventListener('change', () => {
+      state.startTime = startTimeInput.value || defaultStartTime();
+      renderTimeAxis();
+      try { localStorage.setItem(userKey('startTime'), state.startTime); } catch (_) {}
+    });
+  }
+
+  // Theme + music
+  document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+  document.getElementById('musicBtn').addEventListener('click', toggleMusic);
 
   document.getElementById('clearBtn').addEventListener('click', clearAll);
   document.getElementById('saveBtn').addEventListener('click', save);
@@ -984,6 +1672,24 @@
   });
 
   // ---------- Boot ----------
+  // Per-user persisted preferences
+  try {
+    const savedTheme = localStorage.getItem(userKey('theme'));
+    applyTheme(savedTheme || 'dark');
+  } catch (_) { applyTheme('dark'); }
+  try {
+    const savedTf = localStorage.getItem(userKey('tf'));
+    if (savedTf && TF_SECONDS[savedTf]) {
+      state.tf = savedTf;
+      document.querySelectorAll('.tf-pill').forEach(p => p.classList.toggle('active', p.dataset.tf === savedTf));
+    }
+    const savedStart = localStorage.getItem(userKey('startTime'));
+    if (savedStart) {
+      state.startTime = savedStart;
+      if (startTimeInput) startTimeInput.value = savedStart;
+    }
+  } catch (_) {}
+
   renderAxes();
   renderUserChip();
   requestAnimationFrame(() => {

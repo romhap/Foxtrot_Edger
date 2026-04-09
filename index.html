@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Foxtrot Edger — A++ Trading Edge Canvas</title>
+  <title>Foxtrot — Trading edge</title>
   <link rel="icon" type="image/svg+xml" href="assets/foxtrot-logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,9 +24,24 @@
 
     <div class="ticker">
       <span class="tick-label">PAIR</span>
-      <input id="pairInput" type="text" value="BTC / USDT" spellcheck="false" />
+      <input id="pairInput" type="text" value="FOXO/USD" readonly spellcheck="false" />
       <span class="tick-dot"></span>
       <span id="liveBadge" class="live">LIVE EDGE</span>
+    </div>
+
+    <div class="session-chip">
+      <span class="sc-label">TF</span>
+      <div class="tf-pills" id="tfPills">
+        <button class="tf-pill" data-tf="1m">1m</button>
+        <button class="tf-pill" data-tf="5m">5m</button>
+        <button class="tf-pill active" data-tf="15m">15m</button>
+        <button class="tf-pill" data-tf="1h">1h</button>
+        <button class="tf-pill" data-tf="4h">4h</button>
+        <button class="tf-pill" data-tf="1d">1d</button>
+      </div>
+      <span class="sc-divider"></span>
+      <span class="sc-label">START</span>
+      <input id="startTimeInput" type="datetime-local" />
     </div>
 
     <div class="header-actions">
@@ -35,7 +50,13 @@
         <span class="user-label">TRADER</span>
         <span class="user-name" id="userName">anon</span>
       </button>
-      <button class="btn ghost" id="clearBtn" title="Clear all candles">CLEAR</button>
+      <button class="icon-btn" id="themeBtn" title="Toggle dark / light">
+        <span id="themeIcon">☾</span>
+      </button>
+      <button class="icon-btn" id="musicBtn" title="Toggle space ambience">
+        <span id="musicIcon">♪</span>
+      </button>
+      <button class="btn ghost" id="clearBtn" title="Clear canvas">CLEAR</button>
       <button class="btn ghost" id="saveBtn" title="Download your layout as a JSON file">SAVE</button>
       <button class="btn ghost" id="loadBtn" title="Load a saved layout from file">LOAD</button>
       <button class="btn ghost" id="historyBtn" title="Your private local history">HISTORY</button>
@@ -58,23 +79,29 @@
           </div>
           <span>Bearish</span>
         </button>
-        <button class="tool doji" data-action="add-doji">
-          <div class="tool-icon">
-            <div class="mini-candle doji-c"></div>
-          </div>
-          <span>Doji</span>
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-title">TRADE</div>
+        <button class="tool" data-action="add-tp">
+          <div class="tool-icon"><div class="mini-line tp-l"></div></div>
+          <span>TP</span>
+        </button>
+        <button class="tool" data-action="add-sl">
+          <div class="tool-icon"><div class="mini-line sl-l"></div></div>
+          <span>SL</span>
+        </button>
+        <button class="tool" data-action="add-entry">
+          <div class="tool-icon"><div class="mini-line entry-l"></div></div>
+          <span>Entry</span>
         </button>
       </div>
 
       <div class="tool-group">
         <div class="tool-title">MARKUP</div>
-        <button class="tool" data-action="add-support">
-          <div class="tool-icon"><div class="mini-line support-l"></div></div>
-          <span>Support</span>
-        </button>
-        <button class="tool" data-action="add-resistance">
-          <div class="tool-icon"><div class="mini-line resistance-l"></div></div>
-          <span>Resistance</span>
+        <button class="tool" data-action="add-diagonal">
+          <div class="tool-icon"><div class="mini-diagonal"></div></div>
+          <span>Trendline</span>
         </button>
         <button class="tool" data-action="add-zone">
           <div class="tool-icon"><div class="mini-zone"></div></div>
@@ -125,25 +152,11 @@
           <p class="empty-sub">Every candle tells a story. Drag them into alignment.</p>
         </div>
       </div>
-      <div class="insp-foot">
-        <div class="stat">
-          <span class="stat-label">BULLS</span>
-          <span class="stat-val" id="bullCount">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">BEARS</span>
-          <span class="stat-val" id="bearCount">0</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">BIAS</span>
-          <span class="stat-val" id="biasVal">—</span>
-        </div>
-      </div>
     </aside>
   </main>
 
   <footer class="bottombar">
-    <span class="foot-left">© FOXTROT EDGER</span>
+    <span class="foot-left">© FOXTROT</span>
     <span class="foot-mid">Visualize your edge · Don't describe it</span>
     <span class="foot-right" id="coordDisplay">x: —  y: —</span>
   </footer>
