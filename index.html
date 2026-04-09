@@ -31,9 +31,15 @@
     </div>
 
     <div class="header-actions">
+      <button class="user-chip" id="userChip" title="Click to change trader handle — your history is private to this name">
+        <span class="user-dot"></span>
+        <span class="user-label">TRADER</span>
+        <span class="user-name" id="userName">anon</span>
+      </button>
       <button class="btn ghost" id="clearBtn" title="Clear all candles">CLEAR</button>
-      <button class="btn ghost" id="saveBtn" title="Save layout to browser">SAVE</button>
-      <button class="btn ghost" id="loadBtn" title="Load saved layout">LOAD</button>
+      <button class="btn ghost" id="saveBtn" title="Download your layout as a JSON file">SAVE</button>
+      <button class="btn ghost" id="loadBtn" title="Load a saved layout from file">LOAD</button>
+      <button class="btn ghost" id="historyBtn" title="Your private local history">HISTORY</button>
     </div>
   </header>
 
@@ -142,6 +148,24 @@
     <span class="foot-mid">Visualize your edge · Don't describe it</span>
     <span class="foot-right" id="coordDisplay">x: —  y: —</span>
   </footer>
+
+  <!-- History modal (per-user private snapshots) -->
+  <div class="modal-backdrop" id="historyModal">
+    <div class="modal" role="dialog" aria-labelledby="historyTitle">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="historyTitle">PRIVATE HISTORY</div>
+          <div class="modal-sub" id="historySub">Your snapshots · stays on this device</div>
+        </div>
+        <button class="modal-close" id="historyClose" title="Close">×</button>
+      </div>
+      <div class="modal-body" id="historyBody"></div>
+      <div class="modal-foot">
+        <span id="historyFoot">0 / 30 snapshots</span>
+        <button class="snap-btn" id="historySnap">SNAP CURRENT CANVAS</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

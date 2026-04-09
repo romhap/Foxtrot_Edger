@@ -1,26 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
   <defs>
-    <linearGradient id="foxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff2d87"/>
+    <linearGradient id="foxLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#ff6cb0"/>
+      <stop offset="55%" stop-color="#ff2d87"/>
       <stop offset="100%" stop-color="#e6007e"/>
     </linearGradient>
-    <linearGradient id="foxGradDark" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c4006a"/>
-      <stop offset="100%" stop-color="#a30058"/>
+    <linearGradient id="foxMid" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#ff2d87"/>
+      <stop offset="100%" stop-color="#b80062"/>
+    </linearGradient>
+    <linearGradient id="foxDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"  stop-color="#c4006a"/>
+      <stop offset="100%" stop-color="#7a0048"/>
+    </linearGradient>
+    <linearGradient id="foxWhite" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ffd9e9"/>
     </linearGradient>
   </defs>
-  <!-- Left ear -->
-  <path d="M25 30 L60 90 L30 95 Z" fill="url(#foxGradDark)"/>
-  <!-- Right ear -->
-  <path d="M175 30 L140 90 L170 95 Z" fill="url(#foxGradDark)"/>
-  <!-- Head -->
-  <path d="M30 60 L170 60 L155 150 L100 185 L45 150 Z" fill="url(#foxGrad)"/>
-  <!-- White face accent -->
-  <path d="M70 110 L100 180 L130 110 L100 135 Z" fill="#ffffff"/>
-  <!-- Left eye -->
-  <path d="M65 95 L85 95 L78 110 L70 108 Z" fill="#1a0010"/>
-  <!-- Right eye -->
-  <path d="M115 95 L135 95 L130 108 L122 110 Z" fill="#1a0010"/>
-  <!-- Nose highlight -->
-  <circle cx="100" cy="128" r="3" fill="#1a0010"/>
+
+  <!-- LEFT EAR (two facets for origami feel) -->
+  <path d="M18 20 L92 58 L60 108 Z" fill="url(#foxDark)"/>
+  <path d="M18 20 L60 108 L38 80 Z" fill="url(#foxMid)" opacity="0.85"/>
+
+  <!-- RIGHT EAR -->
+  <path d="M222 20 L148 58 L180 108 Z" fill="url(#foxDark)"/>
+  <path d="M222 20 L180 108 L202 80 Z" fill="url(#foxMid)" opacity="0.85"/>
+
+  <!-- HEAD — left facet (lighter) -->
+  <path d="M40 78 L120 50 L120 220 L58 162 Z" fill="url(#foxLight)"/>
+  <!-- HEAD — right facet (slightly darker for 3D) -->
+  <path d="M200 78 L120 50 L120 220 L182 162 Z" fill="url(#foxMid)"/>
+
+  <!-- CENTER WHITE CHEVRON (face accent that tapers to the chin) -->
+  <path d="M72 108 L120 132 L168 108 L120 212 Z" fill="url(#foxWhite)"/>
+
+  <!-- Subtle shading on the right half of the white accent -->
+  <path d="M120 132 L168 108 L120 212 Z" fill="#ffc5db" opacity="0.55"/>
+
+  <!-- LEFT EYE (angular slash) -->
+  <path d="M62 92 L98 108 L92 125 L62 112 Z" fill="#140008"/>
+  <!-- Eye highlight -->
+  <path d="M78 102 L90 110 L86 117 L78 112 Z" fill="#ff2d87" opacity="0.75"/>
+
+  <!-- RIGHT EYE -->
+  <path d="M178 92 L142 108 L148 125 L178 112 Z" fill="#140008"/>
+  <path d="M162 102 L150 110 L154 117 L162 112 Z" fill="#ff2d87" opacity="0.75"/>
+
+  <!-- NOSE (small dark triangle) -->
+  <path d="M108 148 L132 148 L120 166 Z" fill="#140008"/>
+
+  <!-- Thin top highlight across the forehead for glow -->
+  <path d="M40 78 L120 50 L200 78 L180 82 L120 62 L60 82 Z" fill="#ffffff" opacity="0.18"/>
 </svg>

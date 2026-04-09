@@ -659,16 +659,178 @@
     renderInspector(); updateStats(); hideHint();
   }
 
+  // ---------- User profile (per-user private history) ----------
+  // Every user on this device picks a trader handle. All autosave and
+  // history entries are namespaced by that handle, so two people sharing
+  // a browser never see each other's setups.
+
+  const USER_REGISTRY_KEY = 'foxtrot-edger:current-user';
+
+  function currentUser() {
+    return localStorage.getItem(USER_REGISTRY_KEY) || 'anon';
+  }
+
+  function setUser(name) {
+    const clean = String(name || '').trim().slice(0, 24) || 'anon';
+    localStorage.setItem(USER_REGISTRY_KEY, clean);
+    renderUserChip();
+    return clean;
+  }
+
+  function userKey(suffix) {
+    return `foxtrot-edger:${currentUser()}:${suffix}`;
+  }
+
+  function renderUserChip() {
+    const el = document.getElementById('userName');
+    if (el) el.textContent = currentUser();
+  }
+
+  function promptForUser() {
+    const name = prompt(
+      'Enter your trader handle.\nYour canvas history is private to this name on this device.',
+      currentUser() === 'anon' ? '' : currentUser()
+    );
+    if (name === null) return;
+    const final = setUser(name);
+    flash('USER: ' + final.toUpperCase());
+    // Reload history view so it shows the new user's snapshots.
+    if (document.getElementById('historyModal').classList.contains('open')) {
+      renderHistoryList();
+    }
+  }
+
+  // ---------- Private history (per user) ----------
+  const HISTORY_LIMIT = 30;
+
+  function historyKey() { return userKey('history'); }
+  function autosaveKey() { return userKey('autosave'); }
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(historyKey());
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+
+  function writeHistory(arr) {
+    try { localStorage.setItem(historyKey(), JSON.stringify(arr)); }
+    catch (e) { console.warn('history quota', e); }
+  }
+
+  function pushHistory(label) {
+    const entry = {
+      id: `snap-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+      label: label || `Snapshot ${new Date().toLocaleString()}`,
+      savedAt: new Date().toISOString(),
+      pair: document.getElementById('pairInput').value,
+      payload: serialize(),
+      bulls: state.items.filter(i => i.kind === KIND.BULL).length,
+      bears: state.items.filter(i => i.kind === KIND.BEAR).length,
+      count: state.items.length,
+    };
+    const arr = loadHistory();
+    arr.unshift(entry);
+    while (arr.length > HISTORY_LIMIT) arr.pop();
+    writeHistory(arr);
+    return entry;
+  }
+
+  function removeHistory(id) {
+    const arr = loadHistory().filter(e => e.id !== id);
+    writeHistory(arr);
+  }
+
+  function restoreHistory(id) {
+    const entry = loadHistory().find(e => e.id === id);
+    if (!entry) { flash('NOT FOUND'); return; }
+    hydrateFromPayload(entry.payload);
+    flash('RESTORED ✓');
+  }
+
+  function hydrateFromPayload(data) {
+    if (!data || !Array.isArray(data.items)) return;
+    clearAll();
+    state.uid = Number(data.uid) || 1;
+    if (data.pair) {
+      const pi = document.getElementById('pairInput');
+      if (pi) pi.value = data.pair;
+    }
+    data.items.forEach(it => {
+      migrateItem(it);
+      state.items.push(it);
+      renderItem(it);
+    });
+    state.items.forEach(clampItem);
+    state.items.forEach(renderItem);
+    renderInspector(); updateStats(); hideHint();
+  }
+
+  function renderHistoryList() {
+    const body = document.getElementById('historyBody');
+    const foot = document.getElementById('historyFoot');
+    const arr = loadHistory();
+    foot.textContent = `${arr.length} / ${HISTORY_LIMIT} snapshots · ${currentUser()}`;
+    if (arr.length === 0) {
+      body.innerHTML = `
+        <div class="empty-history">
+          <strong>No snapshots yet</strong>
+          Hit <em>Snap Current Canvas</em> to save this setup<br>
+          privately to <b>${currentUser()}</b>.
+        </div>`;
+      return;
+    }
+    body.innerHTML = '';
+    arr.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'history-entry';
+      const when = new Date(e.savedAt);
+      const whenTxt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const icon = e.bulls > e.bears ? '↑' : (e.bears > e.bulls ? '↓' : '◆');
+      row.innerHTML = `
+        <div class="hist-icon">${icon}</div>
+        <div class="hist-info">
+          <div class="hist-title"></div>
+          <div class="hist-meta">${whenTxt} · ${e.count} items · ${e.pair || '—'}</div>
+        </div>
+        <button class="hist-del" title="Delete snapshot">✕</button>
+      `;
+      row.querySelector('.hist-title').textContent = e.label;
+      row.addEventListener('click', (ev) => {
+        if (ev.target.classList.contains('hist-del')) {
+          removeHistory(e.id);
+          renderHistoryList();
+          return;
+        }
+        restoreHistory(e.id);
+        closeHistory();
+      });
+      body.appendChild(row);
+    });
+  }
+
+  function openHistory() {
+    document.getElementById('historyModal').classList.add('open');
+    renderHistoryList();
+  }
+  function closeHistory() {
+    document.getElementById('historyModal').classList.remove('open');
+  }
+
   // ---------- Save / Load ----------
-  // SAVE downloads the current canvas as a JSON file.
-  // LOAD opens a file picker and rehydrates the canvas from that JSON.
+  // SAVE downloads the current canvas as a JSON file AND pushes a
+  // snapshot into the current user's private history. LOAD opens a
+  // file picker and rehydrates the canvas from that JSON.
   // Migration lets older saves (with `wickH`) load into the new candle model.
 
   function serialize() {
     return {
       app: 'foxtrot-edger',
-      version: 2,
+      version: 3,
       savedAt: new Date().toISOString(),
+      user: currentUser(),
       pair: document.getElementById('pairInput').value,
       uid: state.uid,
       items: state.items,
@@ -695,19 +857,21 @@
   }
 
   function save() {
-    const payload = JSON.stringify(serialize(), null, 2);
+    const data = serialize();
+    const payload = JSON.stringify(data, null, 2);
     const blob = new Blob([payload], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     a.href = url;
-    a.download = `foxtrot-edge-${stamp}.json`;
+    a.download = `foxtrot-edge-${currentUser()}-${stamp}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    // Also mirror into localStorage as an auto-backup.
-    try { localStorage.setItem('foxtrot-edger-autosave', payload); } catch (_) {}
+    // Per-user autosave + history snapshot (private to this trader handle).
+    try { localStorage.setItem(autosaveKey(), payload); } catch (_) {}
+    pushHistory(`Saved ${new Date().toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}`);
     flash('SAVED ✓');
   }
 
@@ -773,6 +937,19 @@
   document.getElementById('clearBtn').addEventListener('click', clearAll);
   document.getElementById('saveBtn').addEventListener('click', save);
   document.getElementById('loadBtn').addEventListener('click', load);
+  document.getElementById('historyBtn').addEventListener('click', openHistory);
+  document.getElementById('historyClose').addEventListener('click', closeHistory);
+  document.getElementById('historyModal').addEventListener('click', (e) => {
+    if (e.target.id === 'historyModal') closeHistory();
+  });
+  document.getElementById('historySnap').addEventListener('click', () => {
+    const label = prompt('Name this snapshot:', `Setup ${new Date().toLocaleString()}`);
+    if (label === null) return;
+    pushHistory(label.trim() || `Snapshot ${new Date().toLocaleString()}`);
+    renderHistoryList();
+    flash('SNAP ✓');
+  });
+  document.getElementById('userChip').addEventListener('click', promptForUser);
 
   chart.addEventListener('pointerdown', (e) => {
     if (e.target === chart || e.target === overlay || e.target === chartSvg) {
@@ -802,11 +979,26 @@
     state.items.forEach(renderItem);
   });
 
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeHistory();
+  });
+
   // ---------- Boot ----------
   renderAxes();
+  renderUserChip();
   requestAnimationFrame(() => {
     renderGrid();
-    // Seed demo so the canvas is alive on first load
-    presetBreakout();
+    // Restore this user's autosave if present, otherwise seed the demo.
+    const raw = localStorage.getItem(autosaveKey());
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        hydrateFromPayload(data);
+      } catch (_) {
+        presetBreakout();
+      }
+    } else {
+      presetBreakout();
+    }
   });
 })();
