@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Foxtrot Edger — A++ Trading Edge Canvas</title>
+  <link rel="icon" type="image/svg+xml" href="assets/foxtrot-logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="aurora"></div>
+  <div class="grid-backdrop"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/foxtrot-logo.svg" alt="Foxtrot" class="brand-logo" />
+      <div class="brand-text">
+        <span class="brand-name">FOXTROT</span>
+        <span class="brand-sub">EDGER · A++ CANVAS</span>
+      </div>
+    </div>
+
+    <div class="ticker">
+      <span class="tick-label">PAIR</span>
+      <input id="pairInput" type="text" value="BTC / USDT" spellcheck="false" />
+      <span class="tick-dot"></span>
+      <span id="liveBadge" class="live">LIVE EDGE</span>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn ghost" id="clearBtn" title="Clear all candles">CLEAR</button>
+      <button class="btn ghost" id="saveBtn" title="Save layout to browser">SAVE</button>
+      <button class="btn ghost" id="loadBtn" title="Load saved layout">LOAD</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="toolbar">
+      <div class="tool-group">
+        <div class="tool-title">CANDLES</div>
+        <button class="tool bull" data-action="add-bull">
+          <div class="tool-icon">
+            <div class="mini-candle bull-c"></div>
+          </div>
+          <span>Bullish</span>
+        </button>
+        <button class="tool bear" data-action="add-bear">
+          <div class="tool-icon">
+            <div class="mini-candle bear-c"></div>
+          </div>
+          <span>Bearish</span>
+        </button>
+        <button class="tool doji" data-action="add-doji">
+          <div class="tool-icon">
+            <div class="mini-candle doji-c"></div>
+          </div>
+          <span>Doji</span>
+        </button>
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-title">MARKUP</div>
+        <button class="tool" data-action="add-support">
+          <div class="tool-icon"><div class="mini-line support-l"></div></div>
+          <span>Support</span>
+        </button>
+        <button class="tool" data-action="add-resistance">
+          <div class="tool-icon"><div class="mini-line resistance-l"></div></div>
+          <span>Resistance</span>
+        </button>
+        <button class="tool" data-action="add-zone">
+          <div class="tool-icon"><div class="mini-zone"></div></div>
+          <span>Zone</span>
+        </button>
+        <button class="tool" data-action="add-note">
+          <div class="tool-icon"><div class="mini-note">A+</div></div>
+          <span>Note</span>
+        </button>
+      </div>
+
+      <div class="tool-group">
+        <div class="tool-title">PRESETS</div>
+        <button class="tool preset" data-action="preset-breakout">
+          <span>⚡ Breakout</span>
+        </button>
+        <button class="tool preset" data-action="preset-reversal">
+          <span>↻ Reversal</span>
+        </button>
+        <button class="tool preset" data-action="preset-liquidity">
+          <span>✦ Liq. Sweep</span>
+        </button>
+      </div>
+    </aside>
+
+    <section class="canvas-wrap">
+      <div class="price-axis" id="priceAxis"></div>
+      <div class="chart" id="chart">
+        <svg class="chart-svg" id="chartSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="overlay" id="overlay"></div>
+        <div class="hint" id="hint">
+          <span class="hint-dot"></span>
+          Drop candles from the left rail. Drag anything on the canvas. Double-click a candle to flip it.
+        </div>
+      </div>
+      <div class="time-axis" id="timeAxis"></div>
+    </section>
+
+    <aside class="inspector" id="inspector">
+      <div class="insp-header">
+        <span>INSPECTOR</span>
+        <span id="inspCount" class="insp-count">0 items</span>
+      </div>
+      <div class="insp-body" id="inspBody">
+        <div class="empty-state">
+          <img src="assets/foxtrot-logo.svg" class="empty-logo" alt="" />
+          <p class="empty-title">Design your A++ setup</p>
+          <p class="empty-sub">Every candle tells a story. Drag them into alignment.</p>
+        </div>
+      </div>
+      <div class="insp-foot">
+        <div class="stat">
+          <span class="stat-label">BULLS</span>
+          <span class="stat-val" id="bullCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">BEARS</span>
+          <span class="stat-val" id="bearCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">BIAS</span>
+          <span class="stat-val" id="biasVal">—</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="bottombar">
+    <span class="foot-left">© FOXTROT EDGER</span>
+    <span class="foot-mid">Visualize your edge · Don't describe it</span>
+    <span class="foot-right" id="coordDisplay">x: —  y: —</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

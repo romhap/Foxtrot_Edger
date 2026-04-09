@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="foxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff2d87"/>
+      <stop offset="100%" stop-color="#e6007e"/>
+    </linearGradient>
+    <linearGradient id="foxGradDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c4006a"/>
+      <stop offset="100%" stop-color="#a30058"/>
+    </linearGradient>
+  </defs>
+  <!-- Left ear -->
+  <path d="M25 30 L60 90 L30 95 Z" fill="url(#foxGradDark)"/>
+  <!-- Right ear -->
+  <path d="M175 30 L140 90 L170 95 Z" fill="url(#foxGradDark)"/>
+  <!-- Head -->
+  <path d="M30 60 L170 60 L155 150 L100 185 L45 150 Z" fill="url(#foxGrad)"/>
+  <!-- White face accent -->
+  <path d="M70 110 L100 180 L130 110 L100 135 Z" fill="#ffffff"/>
+  <!-- Left eye -->
+  <path d="M65 95 L85 95 L78 110 L70 108 Z" fill="#1a0010"/>
+  <!-- Right eye -->
+  <path d="M115 95 L135 95 L130 108 L122 110 Z" fill="#1a0010"/>
+  <!-- Nose highlight -->
+  <circle cx="100" cy="128" r="3" fill="#1a0010"/>
+</svg>
