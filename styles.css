@@ -439,17 +439,37 @@ input { font-family: inherit; }
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  width: 14px; height: 6px;
+  width: 18px; height: 5px;
   background: var(--fox);
   border-radius: 3px;
   cursor: ns-resize;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
   box-shadow: 0 0 10px var(--fox-glow);
+  z-index: 3;
+  pointer-events: none;
 }
-.candle .size-top { top: -10px; }
-.candle .size-bot { bottom: -10px; }
-.candle.selected .size-handle { opacity: 1; }
+.candle.selected .size-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+.candle .size-handle:hover {
+  transform: translateX(-50%) scale(1.2);
+}
+/* Wick handles: bright pink bars at the top/bottom of the candle */
+.candle .size-top-wick,
+.candle .size-bot-wick {
+  background: var(--fox);
+  width: 20px;
+}
+/* Body handles: white bars at the top/bottom of the body */
+.candle .size-body-top,
+.candle .size-body-bot {
+  background: #ffffff;
+  width: 24px;
+  height: 3px;
+  box-shadow: 0 0 8px var(--fox-glow);
+}
 
 /* -------- Markup items -------- */
 .markup {
@@ -489,15 +509,57 @@ input { font-family: inherit; }
   border: 1px dashed var(--violet);
   border-radius: 6px;
   box-shadow: 0 0 20px rgba(168, 85, 247, 0.25), inset 0 0 30px rgba(168, 85, 247, 0.08);
+  min-width: 60px;
+  min-height: 34px;
 }
-.markup.zone::before {
-  content: 'SUPPLY/DEMAND';
+.markup.zone .zone-label {
   position: absolute;
   top: 6px; left: 10px;
+  right: 22px;
   font-size: 9px; font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--violet);
   font-family: 'JetBrains Mono', monospace;
+  cursor: text;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+.markup.zone .zone-label:hover {
+  background: rgba(168, 85, 247, 0.15);
+}
+.markup.zone .zone-label[contenteditable="true"] {
+  background: rgba(168, 85, 247, 0.25);
+  color: #ffffff;
+  overflow: visible;
+  text-overflow: clip;
+  cursor: text;
+  box-shadow: 0 0 0 1px var(--violet), 0 0 12px rgba(168, 85, 247, 0.6);
+}
+.markup.zone .zone-resize {
+  position: absolute;
+  right: -7px; bottom: -7px;
+  width: 14px; height: 14px;
+  background: var(--fox);
+  border: 2px solid #1a0028;
+  border-radius: 3px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 0 10px var(--fox-glow);
+  z-index: 3;
+  pointer-events: none;
+}
+.markup.zone.selected .zone-resize {
+  opacity: 1;
+  pointer-events: auto;
+}
+.markup.zone .zone-resize:hover {
+  transform: scale(1.2);
 }
 
 .markup.note {
