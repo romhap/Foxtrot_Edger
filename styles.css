@@ -601,6 +601,11 @@ html[data-theme="light"] .session-chip input[type="datetime-local"] {
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+.btn.share-x .x-logo {
+  width: 14px; height: 14px;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
 .btn.share-x:hover {
   background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
   border-color: rgba(255, 255, 255, 0.4);

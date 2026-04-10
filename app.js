@@ -1425,6 +1425,8 @@
       undoIndex++;
     }
     updateUndoButtons();
+    // Autosave so refresh restores the current canvas
+    try { localStorage.setItem(autosaveKey(), JSON.stringify(serialize())); } catch (_) {}
   }
 
   function applySnapshot(snap) {
@@ -2117,17 +2119,13 @@
   renderUserChip();
   requestAnimationFrame(() => {
     renderGrid();
-    // Restore this user's autosave if present, otherwise seed the demo.
+    // Restore this user's autosave if present, otherwise start empty.
     const raw = localStorage.getItem(autosaveKey());
     if (raw) {
       try {
         const data = JSON.parse(raw);
         hydrateFromPayload(data);
-      } catch (_) {
-        presetBreakout();
-      }
-    } else {
-      presetBreakout();
+      } catch (_) {}
     }
   });
 })();
