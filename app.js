@@ -24,9 +24,12 @@
     SL: 'sl',
     ENTRY: 'entry',
     TRENDLINE: 'trendline',
+    FIB: 'fib',
     ZONE: 'zone',
     NOTE: 'note',
   };
+
+  const FIB_LEVELS = [0, 0.5, 0.618, 0.786, 1];
 
   const CANDLE_KINDS = new Set([KIND.BULL, KIND.BEAR]);
   const LINE_KINDS   = new Set([KIND.TP, KIND.SL, KIND.ENTRY]);
@@ -168,13 +171,13 @@
   }
 
   // ---------- Item factory / render ----------
-  function newItem(kind, x, y) {
+  function newItem(kind, x, y, extra) {
     const id = state.uid++;
     let item;
     if (CANDLE_KINDS.has(kind)) {
-      const bodyH  = 60 + Math.random() * 50;
-      const topWick = 15 + Math.random() * 15;
-      const botWick = 15 + Math.random() * 15;
+      const bodyH  = (extra && extra.bodyH)   || (60 + Math.random() * 50);
+      const topWick = (extra && extra.topWick) || (15 + Math.random() * 15);
+      const botWick = (extra && extra.botWick) || (15 + Math.random() * 15);
       item = { id, kind, x, y, width: 22, topWick, bodyH, botWick };
     } else if (LINE_KINDS.has(kind)) {
       const d = LINE_DEFAULTS[kind];
@@ -193,6 +196,14 @@
         color: '#ff2d87',
         glow:  '#ff6cb0',
       };
+    } else if (kind === KIND.FIB) {
+      item = {
+        id, kind,
+        x1: x,       y1: y - 80,
+        x2: x + 260, y2: y + 80,
+        color: '#ffd84d',
+        glow:  '#ffe8a3',
+      };
     } else if (kind === KIND.ZONE) {
       item = { id, kind, x, y, width: 220, height: 80, text: 'SUPPLY / DEMAND' };
     } else if (kind === KIND.NOTE) {
@@ -208,11 +219,12 @@
     return item;
   }
 
-  // Find the ideal drop position for a new candle.
-  //  - If the canvas is empty: bar index 0 (chart left edge).
-  //  - Otherwise: one bar past the right-most candle, capped at the last
-  //    visible bar slot, at the same vertical center as the last candle.
-  function nextCandleSlot() {
+  // Find the ideal drop position for a new candle with smart continuation.
+  // The new candle's OPEN aligns with the previous candle's CLOSE so the
+  // chart reads like a real price series.
+  //   Bull candle: open = body bottom, close = body top  (price goes UP)
+  //   Bear candle: open = body top,    close = body bottom (price goes DOWN)
+  function nextCandleSlot(newKind) {
     const rect = chart.getBoundingClientRect();
     const candles = state.items.filter(i => CANDLE_KINDS.has(i.kind));
     if (candles.length === 0) {
@@ -222,10 +234,36 @@
     const lastIdx = barIndexAtX(last.x);
     const maxIdx  = BARS_VISIBLE - 1;
     const idx     = Math.min(lastIdx + 1, maxIdx);
-    const lastTotal = (last.topWick || 0) + (last.bodyH || 0) + (last.botWick || 0);
-    const newTotal  = 22 + 60 + 22; // rough default before random sizing
-    const y = last.y + lastTotal / 2 - newTotal / 2;
-    return { x: xAtBarIndex(idx), y };
+
+    // Previous candle's close position (absolute y on canvas)
+    const prevCloseY = last.kind === KIND.BULL
+      ? last.y + last.topWick                           // bull close = body top
+      : last.y + last.topWick + last.bodyH;             // bear close = body bottom
+
+    // Generate reasonable body/wick sizes for the new candle
+    const bodyH   = 40 + Math.random() * 50;
+    const topWick = 10 + Math.random() * 15;
+    const botWick = 10 + Math.random() * 15;
+
+    // Small jitter so consecutive candles feel organic (-8..+8 px)
+    const jitter = (Math.random() - 0.5) * 16;
+
+    let y;
+    if (newKind === KIND.BULL) {
+      // Bull: open at body bottom, so open = y + topWick + bodyH
+      // open should align with prevCloseY → y = prevCloseY - topWick - bodyH + jitter
+      y = prevCloseY - topWick - bodyH + jitter;
+    } else {
+      // Bear: open at body top, so open = y + topWick
+      // open should align with prevCloseY → y = prevCloseY - topWick + jitter
+      y = prevCloseY - topWick + jitter;
+    }
+
+    // Clamp so candle stays on canvas
+    const total = topWick + bodyH + botWick;
+    y = Math.max(0, Math.min(rect.height - total, y));
+
+    return { x: xAtBarIndex(idx), y, bodyH, topWick, botWick };
   }
 
   function renderItem(item) {
@@ -307,9 +345,18 @@
           <div class="color-swatches"></div>
         `;
         buildSwatches(el, item);
+      } else if (item.kind === KIND.FIB) {
+        el.innerHTML = `
+          <svg class="fib-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="fib-handle fib-p1" data-fib-handle="p1"></div>
+          <div class="fib-handle fib-p2" data-fib-handle="p2"></div>
+        `;
       }
       overlay.appendChild(el);
-      if (item.kind === KIND.TRENDLINE) {
+      if (item.kind === KIND.FIB) {
+        attachFibDrag(el, item);
+        attachFibHandles(el, item);
+      } else if (item.kind === KIND.TRENDLINE) {
         attachTrendlineDrag(el, item);
         attachTrendlineHandles(el, item);
         attachTrendlineEdit(el, item);
@@ -328,7 +375,10 @@
     }
     el.className = 'markup';
 
-    if (item.kind === KIND.TRENDLINE) {
+    if (item.kind === KIND.FIB) {
+      el.classList.add('fib');
+      renderFib(el, item);
+    } else if (item.kind === KIND.TRENDLINE) {
       el.classList.add('trendline');
       renderTrendline(el, item);
     } else {
@@ -436,6 +486,59 @@
       label.style.left = `${(lp1x + lp2x) / 2 - 20}px`;
       label.style.top  = `${(lp1y + lp2y) / 2 - 22}px`;
     }
+  }
+
+  function renderFib(el, item) {
+    const PAD = 14;
+    const minX = Math.min(item.x1, item.x2);
+    const maxX = Math.max(item.x1, item.x2);
+    const minY = Math.min(item.y1, item.y2);
+    const maxY = Math.max(item.y1, item.y2);
+    const w = Math.max(40, maxX - minX);
+    const h = Math.max(10, maxY - minY);
+
+    el.style.left   = `${minX - PAD}px`;
+    el.style.top    = `${minY - PAD}px`;
+    el.style.width  = `${w + PAD * 2}px`;
+    el.style.height = `${h + PAD * 2}px`;
+
+    if (item.color) {
+      el.style.setProperty('--fib-color', item.color);
+      el.style.setProperty('--fib-glow',  item.glow || item.color);
+    }
+
+    const svg = el.querySelector('.fib-svg');
+    const svgW = w + PAD * 2;
+    const svgH = h + PAD * 2;
+    svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
+    let lines = '';
+    FIB_LEVELS.forEach(level => {
+      const ly = PAD + h * (1 - level);
+      const show = level > 0 && level < 1;
+      const dash = show ? 'stroke-dasharray="6 4"' : '';
+      const opacity = show ? 0.9 : 0.5;
+      const labelText = level === 0 ? '0' : level === 1 ? '1' : level.toString();
+      lines += `<line x1="${PAD}" y1="${ly}" x2="${svgW - PAD}" y2="${ly}"
+                  stroke="var(--fib-color, #ffd84d)" stroke-width="${show ? 2 : 1.5}" ${dash}
+                  opacity="${opacity}" />`;
+      lines += `<text x="${svgW - PAD + 4}" y="${ly + 4}" fill="var(--fib-color, #ffd84d)"
+                  font-size="10" font-family="JetBrains Mono, monospace" font-weight="700"
+                  opacity="${opacity}">${labelText}</text>`;
+    });
+    // Vertical connection line on left side
+    lines += `<line x1="${PAD}" y1="${PAD}" x2="${PAD}" y2="${PAD + h}"
+                stroke="var(--fib-color, #ffd84d)" stroke-width="1" opacity="0.35"
+                stroke-dasharray="3 3" />`;
+    svg.innerHTML = lines;
+
+    // Handle positions
+    const h1 = el.querySelector('.fib-p1');
+    const h2 = el.querySelector('.fib-p2');
+    h1.style.left = `${PAD}px`;
+    h1.style.top  = `${item.y1 - minY + PAD}px`;
+    h2.style.left = `${PAD}px`;
+    h2.style.top  = `${item.y2 - minY + PAD}px`;
   }
 
   function removeItem(id) {
@@ -936,6 +1039,73 @@
     });
   }
 
+  // ---------- Fibonacci interactions ----------
+  function attachFibDrag(el, item) {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.classList.contains('fib-handle')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      select(item.id);
+      const start = pointer(e);
+      const o1x = item.x1, o1y = item.y1;
+      const o2x = item.x2, o2y = item.y2;
+      const onMove = (ev) => {
+        const pt = pointer(ev);
+        const dx = pt.x - start.x;
+        const dy = pt.y - start.y;
+        item.x1 = o1x + dx; item.y1 = o1y + dy;
+        item.x2 = o2x + dx; item.y2 = o2y + dy;
+        clampItem(item);
+        renderItem(item);
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        commit();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  }
+
+  function attachFibHandles(el, item) {
+    const bind = (selector, which) => {
+      const h = el.querySelector(selector);
+      if (!h) return;
+      h.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        select(item.id);
+        const start = pointer(e);
+        const o = { x1: item.x1, y1: item.y1, x2: item.x2, y2: item.y2 };
+        const onMove = (ev) => {
+          const pt = pointer(ev);
+          const dy = pt.y - start.y;
+          const dx = pt.x - start.x;
+          if (which === 'p1') {
+            item.y1 = o.y1 + dy;
+            item.x2 = o.x2 + dx; // width follows horizontal drag
+          } else {
+            item.y2 = o.y2 + dy;
+            item.x2 = o.x2 + dx;
+          }
+          clampItem(item);
+          renderItem(item);
+          renderInspector();
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          commit();
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    };
+    bind('.fib-p1', 'p1');
+    bind('.fib-p2', 'p2');
+  }
+
   function pointer(e) {
     const rect = chart.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -943,7 +1113,7 @@
 
   function clampItem(item) {
     const rect = chart.getBoundingClientRect();
-    if (item.kind === KIND.TRENDLINE) {
+    if (item.kind === KIND.TRENDLINE || item.kind === KIND.FIB) {
       const clampP = (x, y) => ({
         x: Math.max(0, Math.min(rect.width,  x)),
         y: Math.max(0, Math.min(rect.height, y)),
@@ -988,13 +1158,22 @@
     state.items.forEach(item => {
       const div = document.createElement('div');
       div.className = `insp-item ${item.kind}${state.selected === item.id ? ' active' : ''}`;
-      div.innerHTML = `
-        <div class="insp-row">
-          <span class="insp-type">${labelFor(item)}</span>
-          <button class="insp-del" data-del="${item.id}">✕</button>
-        </div>
-        <div class="insp-meta">${metaFor(item)}</div>
-      `;
+      const row = document.createElement('div');
+      row.className = 'insp-row';
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'insp-type';
+      typeSpan.textContent = labelFor(item);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'insp-del';
+      delBtn.dataset.del = item.id;
+      delBtn.textContent = '\u2715';
+      row.appendChild(typeSpan);
+      row.appendChild(delBtn);
+      const meta = document.createElement('div');
+      meta.className = 'insp-meta';
+      meta.textContent = metaFor(item);
+      div.appendChild(row);
+      div.appendChild(meta);
       div.addEventListener('click', (e) => {
         if (e.target.dataset.del) {
           removeItem(Number(e.target.dataset.del));
@@ -1014,6 +1193,7 @@
       sl:        '─ SL',
       entry:     '─ ENTRY',
       trendline: '╱ TRENDLINE',
+      fib:       '◇ FIBONACCI',
       zone:      '▢ FVG / ZONE',
       note:      '✦ NOTE',
     };
@@ -1033,6 +1213,10 @@
       const dy = item.y2 - item.y1;
       const len = Math.round(Math.sqrt(dx * dx + dy * dy));
       return `${item.label || 'trendline'} · len:${len}`;
+    }
+    if (item.kind === KIND.FIB) {
+      const span = Math.abs(Math.round(item.y2 - item.y1));
+      return `fib · span:${span}px`;
     }
     if (LINE_KINDS.has(item.kind)) {
       return `${item.label || ''} · w:${Math.round(item.width)}`;
@@ -1054,19 +1238,20 @@
     const c = centerPos();
     switch (action) {
       case 'add-bull': {
-        const slot = nextCandleSlot();
-        newItem(KIND.BULL, slot.x, slot.y);
+        const slot = nextCandleSlot(KIND.BULL);
+        newItem(KIND.BULL, slot.x, slot.y, slot);
         break;
       }
       case 'add-bear': {
-        const slot = nextCandleSlot();
-        newItem(KIND.BEAR, slot.x, slot.y);
+        const slot = nextCandleSlot(KIND.BEAR);
+        newItem(KIND.BEAR, slot.x, slot.y, slot);
         break;
       }
       case 'add-tp':       newItem(KIND.TP,       60, c.y - 120); break;
       case 'add-sl':       newItem(KIND.SL,       60, c.y + 120); break;
       case 'add-entry':    newItem(KIND.ENTRY,    60, c.y);       break;
       case 'add-zone':     newItem(KIND.ZONE,      c.x - 40, c.y - 30); break;
+      case 'add-fib':      newItem(KIND.FIB,       c.x - 40, c.y - 80); break;
       case 'add-note':     newItem(KIND.NOTE,      c.x, c.y - 80); break;
       case 'preset-breakout':  presetBreakout(); break;
       case 'preset-reversal':  presetReversal(); break;
@@ -1382,12 +1567,15 @@
     const arr = loadHistory();
     foot.textContent = `${arr.length} / ${HISTORY_LIMIT} snapshots · ${currentUser()}`;
     if (arr.length === 0) {
-      body.innerHTML = `
-        <div class="empty-history">
-          <strong>No snapshots yet</strong>
-          Hit <em>Snap Current Canvas</em> to save this setup<br>
-          privately to <b>${currentUser()}</b>.
-        </div>`;
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'empty-history';
+      emptyDiv.innerHTML = '<strong>No snapshots yet</strong><br>Hit <em>Snap Current Canvas</em> to save this setup privately to ';
+      const userB = document.createElement('b');
+      userB.textContent = currentUser();
+      emptyDiv.appendChild(userB);
+      emptyDiv.appendChild(document.createTextNode('.'));
+      body.innerHTML = '';
+      body.appendChild(emptyDiv);
       return;
     }
     body.innerHTML = '';
@@ -1480,6 +1668,10 @@
       if (it.color == null) it.color = '#ff2d87';
       if (it.glow  == null) it.glow  = '#ff6cb0';
       if (it.label == null) it.label = '';
+    }
+    if (it.kind === KIND.FIB) {
+      if (it.color == null) it.color = '#ffd84d';
+      if (it.glow  == null) it.glow  = '#ffe8a3';
     }
     if (it.kind === KIND.ZONE && !it.text) {
       it.text = 'SUPPLY / DEMAND';
