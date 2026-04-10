@@ -99,8 +99,6 @@
   const chart       = document.getElementById('chart');
   const overlay     = document.getElementById('overlay');
   const chartSvg    = document.getElementById('chartSvg');
-  const inspBody    = document.getElementById('inspBody');
-  const inspCount   = document.getElementById('inspCount');
   const hint        = document.getElementById('hint');
   const priceAxis   = document.getElementById('priceAxis');
   const timeAxis    = document.getElementById('timeAxis');
@@ -350,7 +348,9 @@
           <svg class="fib-svg" xmlns="http://www.w3.org/2000/svg"></svg>
           <div class="fib-handle fib-p1" data-fib-handle="p1"></div>
           <div class="fib-handle fib-p2" data-fib-handle="p2"></div>
+          <div class="color-swatches"></div>
         `;
+        buildSwatches(el, item);
       }
       overlay.appendChild(el);
       if (item.kind === KIND.FIB) {
@@ -1142,87 +1142,7 @@
   }
 
   // ---------- Inspector ----------
-  function renderInspector() {
-    if (state.items.length === 0) {
-      inspBody.innerHTML = `
-        <div class="empty-state">
-          <img src="assets/foxtrot-logo.svg" class="empty-logo" alt="" />
-          <p class="empty-title">Design your A++ setup</p>
-          <p class="empty-sub">Every candle tells a story. Drag them into alignment.</p>
-        </div>`;
-      inspCount.textContent = '0 items';
-      return;
-    }
-    inspCount.textContent = `${state.items.length} item${state.items.length === 1 ? '' : 's'}`;
-    inspBody.innerHTML = '';
-    state.items.forEach(item => {
-      const div = document.createElement('div');
-      div.className = `insp-item ${item.kind}${state.selected === item.id ? ' active' : ''}`;
-      const row = document.createElement('div');
-      row.className = 'insp-row';
-      const typeSpan = document.createElement('span');
-      typeSpan.className = 'insp-type';
-      typeSpan.textContent = labelFor(item);
-      const delBtn = document.createElement('button');
-      delBtn.className = 'insp-del';
-      delBtn.dataset.del = item.id;
-      delBtn.textContent = '\u2715';
-      row.appendChild(typeSpan);
-      row.appendChild(delBtn);
-      const meta = document.createElement('div');
-      meta.className = 'insp-meta';
-      meta.textContent = metaFor(item);
-      div.appendChild(row);
-      div.appendChild(meta);
-      div.addEventListener('click', (e) => {
-        if (e.target.dataset.del) {
-          removeItem(Number(e.target.dataset.del));
-          return;
-        }
-        select(item.id);
-      });
-      inspBody.appendChild(div);
-    });
-  }
-
-  function labelFor(item) {
-    const map = {
-      bull:      '● BULL CANDLE',
-      bear:      '● BEAR CANDLE',
-      tp:        '─ TP',
-      sl:        '─ SL',
-      entry:     '─ ENTRY',
-      trendline: '╱ TRENDLINE',
-      fib:       '◇ FIBONACCI',
-      zone:      '▢ FVG / ZONE',
-      note:      '✦ NOTE',
-    };
-    return map[item.kind] || item.kind;
-  }
-  function metaFor(item) {
-    if (CANDLE_KINDS.has(item.kind)) {
-      const idx = barIndexAtX(item.x);
-      const t   = barToTime(idx);
-      const timeStr = t ? formatTime(t, state.tf) : '';
-      return `#${idx} · ${timeStr} · body:${Math.round(item.bodyH)}`;
-    }
-    if (item.kind === KIND.NOTE) return `"${item.text}"`;
-    if (item.kind === KIND.ZONE) return `"${item.text}" · ${Math.round(item.width)}×${Math.round(item.height)}`;
-    if (item.kind === KIND.TRENDLINE) {
-      const dx = item.x2 - item.x1;
-      const dy = item.y2 - item.y1;
-      const len = Math.round(Math.sqrt(dx * dx + dy * dy));
-      return `${item.label || 'trendline'} · len:${len}`;
-    }
-    if (item.kind === KIND.FIB) {
-      const span = Math.abs(Math.round(item.y2 - item.y1));
-      return `fib · span:${span}px`;
-    }
-    if (LINE_KINDS.has(item.kind)) {
-      return `${item.label || ''} · w:${Math.round(item.width)}`;
-    }
-    return `x:${Math.round(item.x)} y:${Math.round(item.y)} · w:${item.width || ''}`;
-  }
+  function renderInspector() { /* removed — chart uses full width now */ }
 
   function hideHint() {
     hint.classList.add('hide');
