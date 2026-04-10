@@ -229,7 +229,9 @@
     if (candles.length === 0) {
       return { x: xAtBarIndex(0), y: rect.height / 2 - 60 };
     }
-    const last = candles.reduce((a, b) => (a.x > b.x ? a : b));
+    // If a candle is selected, build from it; otherwise from the rightmost.
+    const sel = state.selected != null && candles.find(c => c.id === state.selected);
+    const last = sel || candles.reduce((a, b) => (a.x > b.x ? a : b));
     const lastIdx = barIndexAtX(last.x);
     const maxIdx  = BARS_VISIBLE - 1;
     const idx     = Math.min(lastIdx + 1, maxIdx);
