@@ -31,11 +31,11 @@
   const CANDLE_KINDS = new Set([KIND.BULL, KIND.BEAR]);
   const LINE_KINDS   = new Set([KIND.TP, KIND.SL, KIND.ENTRY]);
 
-  // Candle horizontal magnet spacing (px). Candles snap to multiples of
-  // this from their neighbours so time gaps stay even.
-  const CANDLE_SPACING = 30;
-  const SNAP_THRESHOLD = 14;
-  const ZONE_FVG_THRESHOLD = 22;
+  // Bar grid — every candle is exactly 1 TF unit wide, and always snaps
+  // to the global bar grid across the entire chart.
+  const BARS_VISIBLE  = 30;
+  const BAR_LEFT_PAD  = 6;
+  const ZONE_FVG_THRESHOLD = 24;
 
   // Timeframe → seconds
   const TF_SECONDS = {
@@ -71,6 +71,27 @@
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  // --- Bar grid helpers ---
+  // The chart is divided into BARS_VISIBLE equal slots horizontally.
+  // Every candle snaps to a bar index on this grid, so one "slot" is
+  // exactly one TF unit (1m, 15m, 1h, 1d, ...). The slot width in px
+  // depends on the current chart size, so these are functions.
+  function barSize() {
+    const r = chart ? chart.getBoundingClientRect() : { width: 900 };
+    return Math.max(10, (r.width - BAR_LEFT_PAD * 2) / BARS_VISIBLE);
+  }
+  function barIndexAtX(x) {
+    return Math.round((x - BAR_LEFT_PAD) / barSize());
+  }
+  function xAtBarIndex(i) {
+    return BAR_LEFT_PAD + i * barSize();
+  }
+  function barToTime(i) {
+    const startMs = new Date(state.startTime).getTime();
+    if (isNaN(startMs)) return null;
+    return new Date(startMs + i * (TF_SECONDS[state.tf] || 900) * 1000);
+  }
+
   // ---------- DOM ----------
   const chart       = document.getElementById('chart');
   const overlay     = document.getElementById('overlay');
@@ -97,15 +118,15 @@
 
   function renderTimeAxis() {
     timeAxis.innerHTML = '';
-    const tfSec = TF_SECONDS[state.tf] || 900;
-    const startMs = new Date(state.startTime).getTime();
     const LABEL_COUNT = 7;
-    const BARS_BETWEEN = 5; // label every 5 bars
+    const BARS_BETWEEN = BARS_VISIBLE / (LABEL_COUNT - 1); // 5 for 30/7
+    const startMs = new Date(state.startTime).getTime();
     for (let i = 0; i < LABEL_COUNT; i++) {
       const s = document.createElement('span');
+      const barIdx = Math.round(i * BARS_BETWEEN);
       if (!isNaN(startMs)) {
-        const d = new Date(startMs + i * BARS_BETWEEN * tfSec * 1000);
-        s.textContent = formatTime(d, state.tf);
+        const d = barToTime(barIdx);
+        s.textContent = d ? formatTime(d, state.tf) : '—';
       } else {
         s.textContent = '—';
       }
@@ -178,32 +199,33 @@
       item = { id, kind, x, y, text: 'A++ SETUP' };
     }
     state.items.push(item);
+    if (CANDLE_KINDS.has(kind)) applyCandleMagnet(item);
     renderItem(item);
     renderInspector();
     hideHint();
     select(id);
+    commit();
     return item;
   }
 
-  // Find the ideal drop position for a new candle: place it one CANDLE_SPACING
-  // past the right-most existing candle's body center. Falls back to the centre
-  // of the chart when no candles exist yet.
+  // Find the ideal drop position for a new candle.
+  //  - If the canvas is empty: bar index 0 (chart left edge).
+  //  - Otherwise: one bar past the right-most candle, capped at the last
+  //    visible bar slot, at the same vertical center as the last candle.
   function nextCandleSlot() {
     const rect = chart.getBoundingClientRect();
     const candles = state.items.filter(i => CANDLE_KINDS.has(i.kind));
     if (candles.length === 0) {
-      return { x: rect.width * 0.25, y: rect.height / 2 - 60 };
+      return { x: xAtBarIndex(0), y: rect.height / 2 - 60 };
     }
     const last = candles.reduce((a, b) => (a.x > b.x ? a : b));
-    let x = last.x + CANDLE_SPACING;
-    const maxX = rect.width - (last.width || 22) - 20;
-    if (x > maxX) x = maxX;
-    // Mirror the last candle's vertical center so the new candle sits on
-    // the same price level — still fully draggable afterwards.
+    const lastIdx = barIndexAtX(last.x);
+    const maxIdx  = BARS_VISIBLE - 1;
+    const idx     = Math.min(lastIdx + 1, maxIdx);
     const lastTotal = (last.topWick || 0) + (last.bodyH || 0) + (last.botWick || 0);
     const newTotal  = 22 + 60 + 22; // rough default before random sizing
     const y = last.y + lastTotal / 2 - newTotal / 2;
-    return { x, y };
+    return { x: xAtBarIndex(idx), y };
   }
 
   function renderItem(item) {
@@ -359,6 +381,7 @@
         s.classList.add('active');
         renderItem(item);
         renderInspector();
+        commit();
       });
       container.appendChild(s);
     });
@@ -421,6 +444,7 @@
     if (el) el.remove();
     if (state.selected === id) state.selected = null;
     renderInspector();
+    commit();
   }
 
   function select(id) {
@@ -474,33 +498,18 @@
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      if (moved) commit();
     };
     el.addEventListener('pointerdown', onDown);
   }
 
-  // Snap a candle so its x lands on the same even-spaced grid as the
-  // other candles on the canvas. We look for the nearest candle, then
-  // project the current position onto the nearest CANDLE_SPACING slot
-  // around it. Any slot within SNAP_THRESHOLD wins.
+  // Snap a candle to the nearest bar slot on the global grid. This runs
+  // across the entire chart — no proximity-to-neighbour requirement —
+  // so every candle always lands on an exact TF-aligned slot.
   function applyCandleMagnet(item) {
-    const others = state.items.filter(i =>
-      i.id !== item.id && CANDLE_KINDS.has(i.kind)
-    );
-    if (others.length === 0) return;
-    let bestDelta = Infinity;
-    let bestX = item.x;
-    for (const o of others) {
-      // try to sit 1..6 slots away, on either side of this neighbour
-      for (let k = -6; k <= 6; k++) {
-        if (k === 0) continue;
-        const target = o.x + k * CANDLE_SPACING;
-        const d = Math.abs(target - item.x);
-        if (d < bestDelta) { bestDelta = d; bestX = target; }
-      }
-    }
-    if (bestDelta <= SNAP_THRESHOLD) {
-      item.x = bestX;
-    }
+    const idx = Math.max(0, Math.min(BARS_VISIBLE - 1, barIndexAtX(item.x)));
+    item.x = xAtBarIndex(idx);
+    item._barIndex = idx;
   }
 
   // FVG-style zone magnet: when a zone is dragged near the gap between
@@ -610,6 +619,7 @@
         const onUp = () => {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
+          commit();
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
@@ -629,6 +639,7 @@
       item.kind = item.kind === KIND.BULL ? KIND.BEAR : KIND.BULL;
       renderItem(item);
       renderInspector();
+      commit();
     });
   }
 
@@ -640,6 +651,7 @@
         item.text = next.trim().toUpperCase();
         renderItem(item);
         renderInspector();
+        commit();
       }
     });
   }
@@ -650,7 +662,10 @@
     const finish = () => {
       label.contentEditable = 'false';
       const txt = label.textContent.replace(/\s+/g, ' ').trim() || 'ZONE';
-      item.text = txt.toUpperCase();
+      if (item.text !== txt.toUpperCase()) {
+        item.text = txt.toUpperCase();
+        commit();
+      }
       label.textContent = item.text;
       renderInspector();
     };
@@ -707,6 +722,7 @@
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        commit();
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
@@ -722,9 +738,11 @@
     const finish = () => {
       label.contentEditable = 'false';
       const txt = label.textContent.replace(/\s+/g, ' ').trim();
+      const changed = item.label !== txt;
       item.label = txt;
       label.textContent = txt || (LINE_DEFAULTS[item.kind] && LINE_DEFAULTS[item.kind].defaultLabel) || '';
       renderInspector();
+      if (changed) commit();
     };
 
     const beginEdit = (e) => {
@@ -794,6 +812,7 @@
         const onUp = () => {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
+          commit();
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
@@ -832,6 +851,7 @@
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        commit();
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
@@ -866,6 +886,7 @@
         const onUp = () => {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
+          commit();
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
@@ -882,9 +903,11 @@
     const finish = () => {
       label.contentEditable = 'false';
       const txt = label.textContent.replace(/\s+/g, ' ').trim();
+      const changed = item.label !== txt;
       item.label = txt;
       label.textContent = txt;
       renderInspector();
+      if (changed) commit();
     };
 
     label.addEventListener('dblclick', (e) => {
@@ -997,7 +1020,10 @@
   }
   function metaFor(item) {
     if (CANDLE_KINDS.has(item.kind)) {
-      return `body:${Math.round(item.bodyH)} · top:${Math.round(item.topWick)} · bot:${Math.round(item.botWick)}`;
+      const idx = barIndexAtX(item.x);
+      const t   = barToTime(idx);
+      const timeStr = t ? formatTime(t, state.tf) : '';
+      return `#${idx} · ${timeStr} · body:${Math.round(item.bodyH)}`;
     }
     if (item.kind === KIND.NOTE) return `"${item.text}"`;
     if (item.kind === KIND.ZONE) return `"${item.text}" · ${Math.round(item.width)}×${Math.round(item.height)}`;
@@ -1039,7 +1065,6 @@
       case 'add-tp':       newItem(KIND.TP,       60, c.y - 120); break;
       case 'add-sl':       newItem(KIND.SL,       60, c.y + 120); break;
       case 'add-entry':    newItem(KIND.ENTRY,    60, c.y);       break;
-      case 'add-diagonal': newItem(KIND.TRENDLINE, c.x - 60, c.y - 30); break;
       case 'add-zone':     newItem(KIND.ZONE,      c.x - 40, c.y - 30); break;
       case 'add-note':     newItem(KIND.NOTE,      c.x, c.y - 80); break;
       case 'preset-breakout':  presetBreakout(); break;
@@ -1050,7 +1075,11 @@
 
   // ---------- Presets ----------
   function clearAll() {
-    [...state.items].forEach(i => removeItem(i.id));
+    state.items = [];
+    state.selected = null;
+    overlay.querySelectorAll('[data-id]').forEach(el => el.remove());
+    renderInspector();
+    hint.classList.remove('hide');
   }
 
   function pushCandle(kind, x, y, bodyH, topWick, botWick) {
@@ -1077,95 +1106,164 @@
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2;
-    const spacing = CANDLE_SPACING;
-    const startX = r.width / 2 - (spacing * 4);
+    const startBar = 2;
     // consolidation
     for (let i = 0; i < 4; i++) {
       const bodyH = 40 + Math.random() * 20;
       const w = 10;
       const total = candleTotal(bodyH, w, w);
       const kind = i % 2 ? KIND.BEAR : KIND.BULL;
-      pushCandle(kind, startX + i * spacing, baseY - total / 2, bodyH, w, w);
+      pushCandle(kind, xAtBarIndex(startBar + i), baseY - total / 2, bodyH, w, w);
     }
     // breakout push
     for (let i = 0; i < 4; i++) {
       const bodyH = 70 + i * 15;
       const w = 12;
       const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, startX + (4 + i) * spacing, baseY - 50 - i * 18 - total / 2, bodyH, w, w);
+      pushCandle(KIND.BULL, xAtBarIndex(startBar + 4 + i), baseY - 50 - i * 18 - total / 2, bodyH, w, w);
     }
     pushLine(KIND.ENTRY, 60, baseY - 30,  r.width - 120, 'ENTRY');
     pushLine(KIND.TP,    60, baseY - 150, r.width - 120, 'TP');
     pushLine(KIND.SL,    60, baseY + 40,  r.width - 120, 'SL');
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing + 30, y: baseY - 180, text: 'BREAKOUT' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 8), y: baseY - 180, text: 'BREAKOUT' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
+    commit();
   }
 
   function presetReversal() {
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2 - 80;
-    const spacing = CANDLE_SPACING;
-    const startX = r.width / 2 - (spacing * 4);
+    const startBar = 2;
     for (let i = 0; i < 4; i++) {
       const bodyH = 80 - i * 10;
       const w = 12;
       const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BEAR, startX + i * spacing, baseY + i * 30 - total / 2, bodyH, w, w);
+      pushCandle(KIND.BEAR, xAtBarIndex(startBar + i), baseY + i * 30 - total / 2, bodyH, w, w);
     }
     for (let i = 0; i < 4; i++) {
       const bodyH = 50 + i * 15;
       const w = 12;
       const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, startX + (4 + i) * spacing, baseY + (4 - i) * 30 - 20 - total / 2, bodyH, w, w);
+      pushCandle(KIND.BULL, xAtBarIndex(startBar + 4 + i), baseY + (4 - i) * 30 - 20 - total / 2, bodyH, w, w);
     }
     pushLine(KIND.ENTRY, 60, baseY + 120, r.width - 120, 'ENTRY');
     pushLine(KIND.TP,    60, baseY - 20,  r.width - 120, 'TP');
     pushLine(KIND.SL,    60, baseY + 180, r.width - 120, 'SL');
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 4 * spacing - 20, y: baseY + 200, text: 'REVERSAL' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 4), y: baseY + 200, text: 'REVERSAL' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
+    commit();
   }
 
   function presetLiquiditySweep() {
     clearAll();
     const r = chart.getBoundingClientRect();
     const baseY = r.height / 2;
-    const spacing = CANDLE_SPACING;
-    const startX = r.width / 2 - (spacing * 4);
+    const startBar = 2;
     // range
     for (let i = 0; i < 5; i++) {
       const bodyH = 45 + Math.random() * 15;
       const w = 9;
       const total = candleTotal(bodyH, w, w);
       pushCandle(i % 2 ? KIND.BULL : KIND.BEAR,
-        startX + i * spacing,
+        xAtBarIndex(startBar + i),
         baseY - total / 2 + (Math.random() - 0.5) * 20,
         bodyH, w, w);
     }
     // sweep — long LOWER wick (the sweep itself)
-    pushCandle(KIND.BULL, startX + 5 * spacing, baseY - 40, 30, 8, 90);
+    pushCandle(KIND.BULL, xAtBarIndex(startBar + 5), baseY - 40, 30, 8, 90);
     // continuation
     for (let i = 0; i < 3; i++) {
       const bodyH = 55 + i * 10;
       const w = 10;
       const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, startX + (6 + i) * spacing, baseY - 50 - i * 22 - total / 2, bodyH, w, w);
+      pushCandle(KIND.BULL, xAtBarIndex(startBar + 6 + i), baseY - 50 - i * 22 - total / 2, bodyH, w, w);
     }
     state.uid++;
     state.items.push({
       id: state.uid, kind: KIND.ZONE,
-      x: startX - 10, y: baseY + 30,
-      width: 6 * spacing + 20, height: 60,
+      x: xAtBarIndex(startBar) - 6, y: baseY + 30,
+      width: barSize() * 7, height: 60,
       text: 'LIQUIDITY POOL',
     });
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: startX + 5 * spacing - 30, y: baseY + 110, text: 'LIQ. SWEEP' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 5), y: baseY + 110, text: 'LIQ. SWEEP' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
+    commit();
+  }
+
+  // ---------- Undo / Redo ----------
+  // In-memory stack of canvas snapshots. Every meaningful mutation
+  // (create, delete, drag end, resize end, edit end, preset applied,
+  // load, clear) calls commit() which pushes a deep-copied snapshot.
+  // Undo/redo walk the index back and forth; we also persist the
+  // current live state so save/load still work as usual.
+  const UNDO_LIMIT = 80;
+  const undoStack = [];
+  let undoIndex = -1;
+  let restoring = false;
+
+  function snapshotState() {
+    return {
+      items: JSON.parse(JSON.stringify(state.items)),
+      uid:   state.uid,
+    };
+  }
+
+  function commit() {
+    if (restoring) return;
+    // drop any redo branch
+    if (undoIndex < undoStack.length - 1) {
+      undoStack.length = undoIndex + 1;
+    }
+    undoStack.push(snapshotState());
+    if (undoStack.length > UNDO_LIMIT) {
+      undoStack.shift();
+    } else {
+      undoIndex++;
+    }
+    updateUndoButtons();
+  }
+
+  function applySnapshot(snap) {
+    restoring = true;
+    overlay.querySelectorAll('[data-id]').forEach(el => el.remove());
+    state.items = JSON.parse(JSON.stringify(snap.items));
+    state.uid = snap.uid;
+    state.selected = null;
+    state.items.forEach(it => renderItem(it));
+    renderInspector();
+    if (state.items.length === 0) {
+      hint.classList.remove('hide');
+    } else {
+      hideHint();
+    }
+    restoring = false;
+    updateUndoButtons();
+  }
+
+  function undo() {
+    if (undoIndex <= 0) return;
+    undoIndex--;
+    applySnapshot(undoStack[undoIndex]);
+    flash('UNDO');
+  }
+  function redo() {
+    if (undoIndex >= undoStack.length - 1) return;
+    undoIndex++;
+    applySnapshot(undoStack[undoIndex]);
+    flash('REDO');
+  }
+  function updateUndoButtons() {
+    const u = document.getElementById('undoBtn');
+    const r = document.getElementById('redoBtn');
+    if (u) u.disabled = undoIndex <= 0;
+    if (r) r.disabled = undoIndex >= undoStack.length - 1;
   }
 
   // ---------- User profile (per-user private history) ----------
@@ -1280,6 +1378,7 @@
     state.items.forEach(clampItem);
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
+    commit();
   }
 
   function renderHistoryList() {
@@ -1368,6 +1467,12 @@
       if (it.topWick == null) it.topWick = 15;
       if (it.bodyH   == null) it.bodyH   = 60;
       if (it.botWick == null) it.botWick = 15;
+      // Re-snap x onto the current bar grid and record the index
+      if (chart) {
+        const idx = Math.max(0, Math.min(BARS_VISIBLE - 1, barIndexAtX(it.x || 0)));
+        it.x = xAtBarIndex(idx);
+        it._barIndex = idx;
+      }
     }
     if (LINE_KINDS.has(it.kind)) {
       const d = LINE_DEFAULTS[it.kind] || {};
@@ -1622,7 +1727,25 @@
   document.getElementById('themeBtn').addEventListener('click', toggleTheme);
   document.getElementById('musicBtn').addEventListener('click', toggleMusic);
 
-  document.getElementById('clearBtn').addEventListener('click', clearAll);
+  // Browsers sometimes auto-suspend an AudioContext when focus jumps to
+  // an input / contenteditable element. Quietly resume it on any user
+  // interaction so the ambience never cuts out while editing text.
+  const keepMusicAlive = () => {
+    if (!state.musicOn || !audio.ctx) return;
+    if (audio.ctx.state === 'suspended') {
+      audio.ctx.resume().catch(() => {});
+    }
+  };
+  ['pointerdown', 'pointerup', 'keydown', 'focusin'].forEach(ev => {
+    document.addEventListener(ev, keepMusicAlive, true);
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    clearAll();
+    commit();
+  });
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
   document.getElementById('saveBtn').addEventListener('click', save);
   document.getElementById('loadBtn').addEventListener('click', load);
   document.getElementById('historyBtn').addEventListener('click', openHistory);
@@ -1653,16 +1776,37 @@
   });
 
   document.addEventListener('keydown', (e) => {
+    const ae = document.activeElement;
+    const typing = ae && (ae.tagName === 'INPUT' || ae.isContentEditable);
+
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected !== null) {
-      // avoid deleting when user is typing in an input or contenteditable
-      const ae = document.activeElement;
-      if (ae && (ae.tagName === 'INPUT' || ae.isContentEditable)) return;
+      if (typing) return;
       removeItem(state.selected);
+      return;
+    }
+
+    // Undo / Redo
+    if ((e.ctrlKey || e.metaKey) && !typing) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+        e.preventDefault();
+        redo();
+      }
     }
   });
 
   window.addEventListener('resize', () => {
     renderGrid();
+    renderTimeAxis();
+    // Re-snap candles to the new bar grid so they stay on whole bars.
+    state.items.forEach(it => {
+      if (CANDLE_KINDS.has(it.kind) && it._barIndex != null) {
+        it.x = xAtBarIndex(it._barIndex);
+      }
+    });
     state.items.forEach(clampItem);
     state.items.forEach(renderItem);
   });

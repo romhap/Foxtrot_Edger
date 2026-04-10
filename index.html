@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Foxtrot — Trading edge</title>
+  <title>Foxtrot</title>
   <link rel="icon" type="image/svg+xml" href="assets/foxtrot-logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -56,6 +56,8 @@
       <button class="icon-btn" id="musicBtn" title="Toggle space ambience">
         <span id="musicIcon">♪</span>
       </button>
+      <button class="btn ghost" id="undoBtn" title="Undo (Ctrl+Z)" disabled>↶ UNDO</button>
+      <button class="btn ghost" id="redoBtn" title="Redo (Ctrl+Shift+Z)" disabled>↷ REDO</button>
       <button class="btn ghost" id="clearBtn" title="Clear canvas">CLEAR</button>
       <button class="btn ghost" id="saveBtn" title="Download your layout as a JSON file">SAVE</button>
       <button class="btn ghost" id="loadBtn" title="Load a saved layout from file">LOAD</button>
@@ -99,10 +101,6 @@
 
       <div class="tool-group">
         <div class="tool-title">MARKUP</div>
-        <button class="tool" data-action="add-diagonal">
-          <div class="tool-icon"><div class="mini-diagonal"></div></div>
-          <span>Trendline</span>
-        </button>
         <button class="tool" data-action="add-zone">
           <div class="tool-icon"><div class="mini-zone"></div></div>
           <span>Zone</span>
