@@ -59,6 +59,7 @@
     { name: 'cyan',    color: '#22d3ee', glow: '#67e8f9' },
     { name: 'amber',   color: '#ffd84d', glow: '#ffe8a3' },
     { name: 'white',   color: '#ffffff', glow: '#ffd9ea' },
+    { name: 'black',   color: '#0a0a12', glow: '#333344' },
   ];
 
   const LINE_DEFAULTS = {
@@ -348,9 +349,18 @@
           <svg class="fib-svg" xmlns="http://www.w3.org/2000/svg"></svg>
           <div class="fib-handle fib-p1" data-fib-handle="p1"></div>
           <div class="fib-handle fib-p2" data-fib-handle="p2"></div>
+          <button class="fib-invert" title="Invert fibonacci">↕</button>
           <div class="color-swatches"></div>
         `;
         buildSwatches(el, item);
+        el.querySelector('.fib-invert').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const tmp = item.y1;
+          item.y1 = item.y2;
+          item.y2 = tmp;
+          renderItem(item);
+          commit();
+        });
       }
       overlay.appendChild(el);
       if (item.kind === KIND.FIB) {

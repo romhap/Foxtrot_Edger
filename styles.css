@@ -1129,6 +1129,33 @@ html[data-theme="light"] .session-chip input[type="datetime-local"] {
 .markup.fib .fib-handle:hover {
   transform: translate(-50%, -50%) scale(1.3);
 }
+.markup.fib .fib-invert {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px; height: 24px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-bg-a);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fib-color, #ffd84d);
+  font-size: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 4;
+  transition: background 0.15s ease, transform 0.15s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.markup.fib.selected .fib-invert {
+  display: flex;
+}
+.markup.fib .fib-invert:hover {
+  background: rgba(255, 216, 77, 0.2);
+  transform: scale(1.15);
+}
 /* Mini fib icon for toolbar */
 .mini-fib {
   font-size: 14px;
