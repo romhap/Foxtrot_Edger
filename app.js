@@ -105,9 +105,9 @@
 
   // ---------- Init chart ----------
   function renderAxes() {
-    // price axis
+    // price axis (FOX/USDT)
     priceAxis.innerHTML = '';
-    const prices = ['69.4k', '68.2k', '67.0k', '65.8k', '64.6k', '63.4k', '62.2k', '61.0k'];
+    const prices = ['2.40', '2.24', '2.08', '1.92', '1.76', '1.60', '1.44', '1.28'];
     prices.forEach(p => {
       const s = document.createElement('span');
       s.textContent = p;
@@ -1583,12 +1583,54 @@
     started: false,
   };
 
-  // The native prompt() dialog freezes the page and suspends the
-  // AudioContext. Call this after any prompt() to bring it back.
+  // The native prompt() dialog and focus changes can suspend the
+  // AudioContext. This aggressively brings it back + restarts the
+  // bell schedule if it died during suspension.
   function resumeAudio() {
-    if (state.musicOn && audio.ctx && audio.ctx.state === 'suspended') {
+    if (!state.musicOn || !audio.ctx) return;
+    if (audio.ctx.state === 'suspended') {
       audio.ctx.resume().catch(() => {});
     }
+    // If the bell timer was lost during suspension, kick it again.
+    if (audio.started && !audio.bellTimer) {
+      audio.bellTimer = setTimeout(() => scheduleBell(), 800);
+    }
+  }
+
+  // Persistent watchdog: checks every 500ms while music is on and
+  // resumes the context if the browser suspended it for any reason
+  // (prompt, tab switch, OS sleep, etc.).
+  let audioWatchdog = null;
+  function startAudioWatchdog() {
+    if (audioWatchdog) return;
+    audioWatchdog = setInterval(() => {
+      if (!state.musicOn) { stopAudioWatchdog(); return; }
+      resumeAudio();
+    }, 500);
+  }
+  function stopAudioWatchdog() {
+    if (audioWatchdog) { clearInterval(audioWatchdog); audioWatchdog = null; }
+  }
+
+  function scheduleBell() {
+    if (!audio.started || !audio.ctx) return;
+    const ctx = audio.ctx;
+    const pentatonic = audio._pentatonic || [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
+    const delay = audio._delay;
+    const now = ctx.currentTime;
+    const f = pentatonic[Math.floor(Math.random() * pentatonic.length)];
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
+    o.connect(g);
+    if (delay) g.connect(delay);
+    o.start(now);
+    o.stop(now + 3.4);
+    audio.bellTimer = setTimeout(() => scheduleBell(), 3500 + Math.random() * 6500);
   }
 
   function startAmbience() {
@@ -1640,25 +1682,13 @@
       lfo.connect(lfoGain).connect(droneGain.gain);
       lfo.start();
 
-      // Bell voice factory
+      // Bell voice factory — exposed as scheduleBell() so the watchdog
+      // can restart it if the timer was lost during an AudioContext
+      // suspension (prompt dialog, tab switch, etc.).
       const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
-      const bell = () => {
-        if (!audio.started) return;
-        const now = ctx.currentTime;
-        const f = pentatonic[Math.floor(Math.random() * pentatonic.length)];
-        const o = ctx.createOscillator();
-        o.type = 'triangle';
-        o.frequency.value = f;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.0001, now);
-        g.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
-        o.connect(g).connect(delay);
-        o.start(now);
-        o.stop(now + 3.4);
-        audio.bellTimer = setTimeout(bell, 3500 + Math.random() * 6500);
-      };
-      audio.bellTimer = setTimeout(bell, 1500);
+      audio._pentatonic = pentatonic;
+      audio._delay = delay;
+      audio.bellTimer = setTimeout(() => scheduleBell(), 1500);
 
       // Fade in
       master.gain.cancelScheduledValues(ctx.currentTime);
@@ -1693,11 +1723,13 @@
     const btn  = document.getElementById('musicBtn');
     if (state.musicOn) {
       startAmbience();
+      startAudioWatchdog();
       if (icon) icon.textContent = '♫';
       if (btn)  btn.classList.add('active');
       flash('AMBIENCE ON');
     } else {
       stopAmbience();
+      stopAudioWatchdog();
       if (icon) icon.textContent = '♪';
       if (btn)  btn.classList.remove('active');
       flash('AMBIENCE OFF');
