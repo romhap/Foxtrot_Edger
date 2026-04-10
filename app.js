@@ -647,6 +647,7 @@
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       const next = prompt('Note text', item.text);
+      resumeAudio();
       if (next !== null && next.trim()) {
         item.text = next.trim().toUpperCase();
         renderItem(item);
@@ -1298,6 +1299,7 @@
       'Enter your trader handle.\nYour canvas history is private to this name on this device.',
       currentUser() === 'anon' ? '' : currentUser()
     );
+    resumeAudio();
     if (name === null) return;
     const final = setUser(name);
     flash('USER: ' + final.toUpperCase());
@@ -1581,6 +1583,14 @@
     started: false,
   };
 
+  // The native prompt() dialog freezes the page and suspends the
+  // AudioContext. Call this after any prompt() to bring it back.
+  function resumeAudio() {
+    if (state.musicOn && audio.ctx && audio.ctx.state === 'suspended') {
+      audio.ctx.resume().catch(() => {});
+    }
+  }
+
   function startAmbience() {
     if (!audio.ctx) {
       try { audio.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -1755,6 +1765,7 @@
   });
   document.getElementById('historySnap').addEventListener('click', () => {
     const label = prompt('Name this snapshot:', `Setup ${new Date().toLocaleString()}`);
+    resumeAudio();
     if (label === null) return;
     pushHistory(label.trim() || `Snapshot ${new Date().toLocaleString()}`);
     renderHistoryList();
