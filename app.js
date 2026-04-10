@@ -2022,9 +2022,7 @@
   document.getElementById('loadBtn').addEventListener('click', load);
   document.getElementById('historyBtn').addEventListener('click', openHistory);
   document.getElementById('shareBtn').addEventListener('click', () => {
-    const count = state.items.filter(i => CANDLE_KINDS.has(i.kind)).length;
-    const tf = state.tf.toUpperCase();
-    const text = `I just mapped my ${tf} setup on @FoxtrotEdge (${count} candles) \u2014 visualize your edge, don't describe it.`;
+    const text = `I just visualized my ideal trading setup on @FoxtrotEdge \u2014 visualize your edge, don\u2019t describe it.`;
     const url = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text);
     window.open(url, '_blank', 'noopener');
   });
