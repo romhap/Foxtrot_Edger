@@ -522,9 +522,12 @@
     const svgH = h + PAD * 2;
     svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
 
+    // Direction-aware: level 0 sits at y1, level 1 sits at y2.
+    // Inverting swaps y1/y2, which flips where 0.786 etc. appear.
     let lines = '';
     FIB_LEVELS.forEach(level => {
-      const ly = PAD + h * (1 - level);
+      const absY = item.y1 + (item.y2 - item.y1) * level;
+      const ly   = absY - minY + PAD;
       const show = level > 0 && level < 1;
       const dash = show ? 'stroke-dasharray="6 4"' : '';
       const opacity = show ? 0.9 : 0.5;
