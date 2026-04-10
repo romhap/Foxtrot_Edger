@@ -596,6 +596,15 @@ html[data-theme="light"] .session-chip input[type="datetime-local"] {
   box-shadow: var(--shadow-pink);
 }
 .btn.ghost { background: transparent; }
+.btn.share-x {
+  background: linear-gradient(135deg, #1a1a2e, #0a0a12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.btn.share-x:hover {
+  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  border-color: rgba(255, 255, 255, 0.4);
+}
 .btn[disabled] {
   opacity: 0.35;
   pointer-events: none;
@@ -1332,11 +1341,25 @@ html[data-theme="light"] .session-chip input[type="datetime-local"] {
   .bottombar { font-size: 9px; padding: 0 12px; }
 }
 
-/* ---- Mobile blocker ---- */
+/* ---- iPad / Tablet tweaks ---- */
+@media (max-width: 900px) and (min-width: 481px) {
+  .canvas-wrap { grid-template-columns: 42px 1fr; }
+  .price-axis { font-size: 9px; }
+  .time-axis { font-size: 9px; padding: 0 12px 0 52px; }
+  /* Larger touch targets for tablet drag */
+  .markup.line .line-handle { width: 18px; height: 18px; }
+  .markup.trendline .tl-handle { width: 16px; height: 16px; }
+  .markup.fib .fib-handle { width: 16px; height: 16px; }
+  .markup.zone .zone-resize { width: 16px; height: 16px; }
+  .size-handle { width: 22px; height: 7px; }
+  .modal { width: min(500px, calc(100vw - 32px)); }
+}
+
+/* ---- Phone blocker (phones only, ≤480px) ---- */
 .mobile-block {
   display: none;
 }
-@media (max-width: 768px) {
+@media (max-width: 480px) {
   .mobile-block {
     display: flex;
     flex-direction: column;

@@ -1223,31 +1223,67 @@
     });
   }
 
+  // Helper: push candle whose open aligns with prev candle's close
+  function pushContinuation(kind, barIdx, prev) {
+    const bodyH  = 35 + Math.random() * 40;
+    const topW   = 8 + Math.random() * 12;
+    const botW   = 8 + Math.random() * 12;
+    let y;
+    if (prev) {
+      const prevClose = prev.kind === KIND.BULL
+        ? prev.y + prev.topWick
+        : prev.y + prev.topWick + prev.bodyH;
+      const jitter = (Math.random() - 0.5) * 6;
+      if (kind === KIND.BULL) {
+        y = prevClose - topW - bodyH + jitter;
+      } else {
+        y = prevClose - topW + jitter;
+      }
+    } else {
+      y = chart.getBoundingClientRect().height / 2 - (topW + bodyH + botW) / 2;
+    }
+    pushCandle(kind, xAtBarIndex(barIdx), y, bodyH, topW, botW);
+    return state.items[state.items.length - 1];
+  }
+
   function presetBreakout() {
     clearAll();
     const r = chart.getBoundingClientRect();
-    const baseY = r.height / 2;
-    const startBar = 2;
-    // consolidation
-    for (let i = 0; i < 4; i++) {
-      const bodyH = 40 + Math.random() * 20;
-      const w = 10;
-      const total = candleTotal(bodyH, w, w);
-      const kind = i % 2 ? KIND.BEAR : KIND.BULL;
-      pushCandle(kind, xAtBarIndex(startBar + i), baseY - total / 2, bodyH, w, w);
+    const s = 4; // start bar
+    let prev = null;
+
+    // Consolidation range — tight bodies, alternating
+    const rangeKinds = [KIND.BEAR, KIND.BULL, KIND.BEAR, KIND.BULL, KIND.BEAR, KIND.BULL];
+    for (let i = 0; i < rangeKinds.length; i++) {
+      prev = pushContinuation(rangeKinds[i], s + i, prev);
     }
-    // breakout push
-    for (let i = 0; i < 4; i++) {
-      const bodyH = 70 + i * 15;
-      const w = 12;
-      const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, xAtBarIndex(startBar + 4 + i), baseY - 50 - i * 18 - total / 2, bodyH, w, w);
-    }
-    pushLine(KIND.ENTRY, 60, baseY - 30,  r.width - 120, 'ENTRY');
-    pushLine(KIND.TP,    60, baseY - 150, r.width - 120, 'TP');
-    pushLine(KIND.SL,    60, baseY + 40,  r.width - 120, 'SL');
+    const rangeTop = Math.min(...state.items.filter(c => CANDLE_KINDS.has(c.kind)).map(c => c.y + c.topWick));
+
+    // Resistance zone across the range top
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 8), y: baseY - 180, text: 'BREAKOUT' });
+    state.items.push({
+      id: state.uid, kind: KIND.ZONE,
+      x: xAtBarIndex(s) - 4, y: rangeTop - 8,
+      width: barSize() * 7, height: 22,
+      text: 'RESISTANCE',
+    });
+
+    // Breakout candles — 4 strong bulls smashing through
+    for (let i = 0; i < 4; i++) {
+      prev = pushContinuation(KIND.BULL, s + rangeKinds.length + i, prev);
+    }
+
+    // Entry at resistance break, SL below range, TP at 2.5RR
+    const entryY = rangeTop - 4;
+    const slY = r.height / 2 + 50;
+    const risk = slY - entryY;
+    const tpY = entryY - risk * 2.5;
+    pushLine(KIND.ENTRY, 40, entryY,  r.width - 80, 'ENTRY');
+    pushLine(KIND.SL,    40, slY,     r.width - 80, 'SL');
+    pushLine(KIND.TP,    40, Math.max(10, tpY), r.width - 80, 'TP · 2.5RR');
+
+    state.uid++;
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(s + rangeKinds.length + 2), y: Math.max(10, tpY) - 22, text: 'BREAKOUT' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
     commit();
@@ -1256,25 +1292,54 @@
   function presetReversal() {
     clearAll();
     const r = chart.getBoundingClientRect();
-    const baseY = r.height / 2 - 80;
-    const startBar = 2;
-    for (let i = 0; i < 4; i++) {
-      const bodyH = 80 - i * 10;
-      const w = 12;
-      const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BEAR, xAtBarIndex(startBar + i), baseY + i * 30 - total / 2, bodyH, w, w);
+    const s = 4;
+    let prev = null;
+
+    // Down-trend: 5 bearish candles getting weaker
+    for (let i = 0; i < 5; i++) {
+      prev = pushContinuation(KIND.BEAR, s + i, prev);
     }
-    for (let i = 0; i < 4; i++) {
-      const bodyH = 50 + i * 15;
-      const w = 12;
-      const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, xAtBarIndex(startBar + 4 + i), baseY + (4 - i) * 30 - 20 - total / 2, bodyH, w, w);
-    }
-    pushLine(KIND.ENTRY, 60, baseY + 120, r.width - 120, 'ENTRY');
-    pushLine(KIND.TP,    60, baseY - 20,  r.width - 120, 'TP');
-    pushLine(KIND.SL,    60, baseY + 180, r.width - 120, 'SL');
+    const swingLow = prev.y + prev.topWick + prev.bodyH + prev.botWick;
+
+    // Hammer / rejection candle with long lower wick
+    pushCandle(KIND.BULL, xAtBarIndex(s + 5), prev.y + prev.topWick + prev.bodyH - 12, 22, 6, 55);
+    prev = state.items[state.items.length - 1];
+
+    // FVG zone at the pivot
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 4), y: baseY + 200, text: 'REVERSAL' });
+    state.items.push({
+      id: state.uid, kind: KIND.ZONE,
+      x: xAtBarIndex(s + 4) - 2, y: swingLow - 30,
+      width: barSize() * 3, height: 35,
+      text: 'FVG',
+    });
+
+    // Reversal rally: 5 bullish candles
+    for (let i = 0; i < 5; i++) {
+      prev = pushContinuation(KIND.BULL, s + 6 + i, prev);
+    }
+
+    // Trade lines
+    const entryY = swingLow - 20;
+    const slY = swingLow + 30;
+    const risk = slY - entryY;
+    const tpY = entryY - risk * 2;
+    pushLine(KIND.ENTRY, 40, entryY,  r.width - 80, 'ENTRY');
+    pushLine(KIND.SL,    40, slY,     r.width - 80, 'SL');
+    pushLine(KIND.TP,    40, Math.max(10, tpY), r.width - 80, 'TP · 2RR');
+
+    // Fib from swing high to swing low
+    const swingHigh = Math.min(...state.items.filter(c => CANDLE_KINDS.has(c.kind)).map(c => c.y));
+    state.uid++;
+    state.items.push({
+      id: state.uid, kind: KIND.FIB,
+      x1: xAtBarIndex(s), y1: swingHigh,
+      x2: xAtBarIndex(s + 10), y2: swingLow,
+      color: '#ffd84d', glow: '#ffe8a3',
+    });
+
+    state.uid++;
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(s + 6), y: Math.max(10, tpY) - 22, text: 'REVERSAL' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
     commit();
@@ -1283,36 +1348,46 @@
   function presetLiquiditySweep() {
     clearAll();
     const r = chart.getBoundingClientRect();
-    const baseY = r.height / 2;
-    const startBar = 2;
-    // range
-    for (let i = 0; i < 5; i++) {
-      const bodyH = 45 + Math.random() * 15;
-      const w = 9;
-      const total = candleTotal(bodyH, w, w);
-      pushCandle(i % 2 ? KIND.BULL : KIND.BEAR,
-        xAtBarIndex(startBar + i),
-        baseY - total / 2 + (Math.random() - 0.5) * 20,
-        bodyH, w, w);
+    const s = 4;
+    let prev = null;
+
+    // Range-bound price action — 6 candles
+    const rangeKinds = [KIND.BULL, KIND.BEAR, KIND.BULL, KIND.BEAR, KIND.BULL, KIND.BEAR];
+    for (let i = 0; i < rangeKinds.length; i++) {
+      prev = pushContinuation(rangeKinds[i], s + i, prev);
     }
-    // sweep — long LOWER wick (the sweep itself)
-    pushCandle(KIND.BULL, xAtBarIndex(startBar + 5), baseY - 40, 30, 8, 90);
-    // continuation
-    for (let i = 0; i < 3; i++) {
-      const bodyH = 55 + i * 10;
-      const w = 10;
-      const total = candleTotal(bodyH, w, w);
-      pushCandle(KIND.BULL, xAtBarIndex(startBar + 6 + i), baseY - 50 - i * 22 - total / 2, bodyH, w, w);
-    }
+    const candles = state.items.filter(c => CANDLE_KINDS.has(c.kind));
+    const rangeBottom = Math.max(...candles.map(c => c.y + c.topWick + c.bodyH + c.botWick));
+
+    // Liquidity pool zone at the bottom of the range
     state.uid++;
     state.items.push({
       id: state.uid, kind: KIND.ZONE,
-      x: xAtBarIndex(startBar) - 6, y: baseY + 30,
-      width: barSize() * 7, height: 60,
+      x: xAtBarIndex(s) - 4, y: rangeBottom - 6,
+      width: barSize() * 7, height: 30,
       text: 'LIQUIDITY POOL',
     });
+
+    // Sweep candle — huge lower wick dipping below the range then closing back inside
+    pushCandle(KIND.BULL, xAtBarIndex(s + 6), rangeBottom - 50, 28, 6, 75);
+    prev = state.items[state.items.length - 1];
+
+    // Aggressive bullish continuation after the sweep — 4 strong candles
+    for (let i = 0; i < 4; i++) {
+      prev = pushContinuation(KIND.BULL, s + 7 + i, prev);
+    }
+
+    // Trade lines
+    const entryY = rangeBottom - 15;
+    const slY = rangeBottom + 65;
+    const risk = slY - entryY;
+    const tpY = entryY - risk * 2.5;
+    pushLine(KIND.ENTRY, 40, entryY,  r.width - 80, 'ENTRY');
+    pushLine(KIND.SL,    40, slY,     r.width - 80, 'SL');
+    pushLine(KIND.TP,    40, Math.max(10, tpY), r.width - 80, 'TP · 2.5RR');
+
     state.uid++;
-    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(startBar + 5), y: baseY + 110, text: 'LIQ. SWEEP' });
+    state.items.push({ id: state.uid, kind: KIND.NOTE, x: xAtBarIndex(s + 6), y: rangeBottom + 80, text: 'LIQ. SWEEP' });
     state.items.forEach(renderItem);
     renderInspector(); hideHint();
     commit();
@@ -1946,6 +2021,13 @@
   document.getElementById('saveBtn').addEventListener('click', save);
   document.getElementById('loadBtn').addEventListener('click', load);
   document.getElementById('historyBtn').addEventListener('click', openHistory);
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const count = state.items.filter(i => CANDLE_KINDS.has(i.kind)).length;
+    const tf = state.tf.toUpperCase();
+    const text = `I just mapped my ${tf} setup on @FoxtrotEdge (${count} candles) \u2014 visualize your edge, don't describe it.`;
+    const url = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text);
+    window.open(url, '_blank', 'noopener');
+  });
   document.getElementById('historyClose').addEventListener('click', closeHistory);
   document.getElementById('historyModal').addEventListener('click', (e) => {
     if (e.target.id === 'historyModal') closeHistory();
