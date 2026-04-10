@@ -646,14 +646,14 @@
   function attachNoteEdit(el, item) {
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      const next = prompt('Note text', item.text);
-      resumeAudio();
-      if (next !== null && next.trim()) {
-        item.text = next.trim().toUpperCase();
-        renderItem(item);
-        renderInspector();
-        commit();
-      }
+      showPrompt('Note text', item.text).then(next => {
+        if (next !== null && next.trim()) {
+          item.text = next.trim().toUpperCase();
+          renderItem(item);
+          renderInspector();
+          commit();
+        }
+      });
     });
   }
 
@@ -1295,18 +1295,14 @@
   }
 
   function promptForUser() {
-    const name = prompt(
-      'Enter your trader handle.\nYour canvas history is private to this name on this device.',
-      currentUser() === 'anon' ? '' : currentUser()
-    );
-    resumeAudio();
-    if (name === null) return;
-    const final = setUser(name);
-    flash('USER: ' + final.toUpperCase());
-    // Reload history view so it shows the new user's snapshots.
-    if (document.getElementById('historyModal').classList.contains('open')) {
-      renderHistoryList();
-    }
+    showPrompt('Trader handle (history is private to this name)', currentUser() === 'anon' ? '' : currentUser()).then(name => {
+      if (name === null) return;
+      const final = setUser(name);
+      flash('USER: ' + final.toUpperCase());
+      if (document.getElementById('historyModal').classList.contains('open')) {
+        renderHistoryList();
+      }
+    });
   }
 
   // ---------- Private history (per user) ----------
@@ -1363,10 +1359,7 @@
     if (!data || !Array.isArray(data.items)) return;
     clearAll();
     state.uid = Number(data.uid) || 1;
-    if (data.pair) {
-      const pi = document.getElementById('pairInput');
-      if (pi) pi.value = data.pair;
-    }
+    // Pair is locked to FOX/USDT — ignore saved pair values.
     const migrated = [];
     data.items.forEach(it => {
       const next = migrateItem(it);
@@ -1538,6 +1531,41 @@
     document.body.appendChild(input);
     input.click();
     setTimeout(() => input.remove(), 0);
+  }
+
+  // Custom prompt that doesn't freeze the page or suspend AudioContext.
+  // Returns a Promise<string|null>.
+  function showPrompt(title, defaultValue) {
+    return new Promise(resolve => {
+      const modal = document.getElementById('promptModal');
+      const input = document.getElementById('promptInput');
+      const titleEl = document.getElementById('promptTitle');
+      const okBtn = document.getElementById('promptOkBtn');
+      const cancelBtn = document.getElementById('promptCancelBtn');
+      const closeBtn = document.getElementById('promptCancel');
+
+      titleEl.textContent = title || 'Edit';
+      input.value = defaultValue || '';
+      modal.classList.add('open');
+      input.focus();
+      input.select();
+
+      let settled = false;
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        modal.classList.remove('open');
+        resolve(val);
+      };
+      okBtn.onclick = () => finish(input.value);
+      cancelBtn.onclick = () => finish(null);
+      closeBtn.onclick = () => finish(null);
+      modal.onclick = (e) => { if (e.target === modal) finish(null); };
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(input.value); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+      };
+    });
   }
 
   function flash(msg) {
@@ -1796,12 +1824,12 @@
     if (e.target.id === 'historyModal') closeHistory();
   });
   document.getElementById('historySnap').addEventListener('click', () => {
-    const label = prompt('Name this snapshot:', `Setup ${new Date().toLocaleString()}`);
-    resumeAudio();
-    if (label === null) return;
-    pushHistory(label.trim() || `Snapshot ${new Date().toLocaleString()}`);
-    renderHistoryList();
-    flash('SNAP ✓');
+    showPrompt('Name this snapshot', `Setup ${new Date().toLocaleString()}`).then(label => {
+      if (label === null) return;
+      pushHistory(label.trim() || `Snapshot ${new Date().toLocaleString()}`);
+      renderHistoryList();
+      flash('SNAP ✓');
+    });
   });
   document.getElementById('userChip').addEventListener('click', promptForUser);
 

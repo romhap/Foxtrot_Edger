@@ -172,6 +172,11 @@ html[data-theme="light"] .aurora {
   background-clip: text;
   color: transparent;
 }
+html[data-theme="light"] .brand-name {
+  background: linear-gradient(90deg, #1a0014, var(--fox-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
 .brand-sub {
   font-size: 9px;
   letter-spacing: 2.4px;
@@ -446,6 +451,24 @@ html[data-theme="light"] .session-chip input[type="datetime-local"] {
 }
 .modal-body::-webkit-scrollbar { width: 6px; }
 .modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.prompt-modal { width: min(400px, calc(100vw - 40px)); }
+.prompt-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--ink);
+  background: var(--glass-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  outline: none;
+  letter-spacing: 0.5px;
+}
+.prompt-input:focus {
+  border-color: var(--fox);
+  box-shadow: 0 0 0 2px var(--fox-glow);
+}
 
 .history-entry {
   display: flex;
