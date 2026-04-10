@@ -1201,6 +1201,7 @@
     overlay.querySelectorAll('[data-id]').forEach(el => el.remove());
     renderInspector();
     hint.classList.remove('hide');
+    try { localStorage.removeItem(autosaveKey()); } catch (_) {}
   }
 
   function pushCandle(kind, x, y, bodyH, topWick, botWick) {
