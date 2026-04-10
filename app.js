@@ -36,7 +36,7 @@
 
   // Bar grid — every candle is exactly 1 TF unit wide, and always snaps
   // to the global bar grid across the entire chart.
-  const BARS_VISIBLE  = 30;
+  const BARS_VISIBLE  = 60;
   const BAR_LEFT_PAD  = 6;
   const ZONE_FVG_THRESHOLD = 24;
 
@@ -121,7 +121,7 @@
   function renderTimeAxis() {
     timeAxis.innerHTML = '';
     const LABEL_COUNT = 7;
-    const BARS_BETWEEN = BARS_VISIBLE / (LABEL_COUNT - 1); // 5 for 30/7
+    const BARS_BETWEEN = BARS_VISIBLE / (LABEL_COUNT - 1); // 10 for 60/7
     const startMs = new Date(state.startTime).getTime();
     for (let i = 0; i < LABEL_COUNT; i++) {
       const s = document.createElement('span');
